@@ -1,17 +1,18 @@
-import json
+import os
 import socket
-import sys
-from datetime import datetime
 from pathlib import Path
 
-from normalizer import normalize_log
+from dotenv import load_dotenv
 
-sys.path.insert(0, str(Path(__file__).parent))
+from backend.services.pipeline import process_log, start_pipeline
 
-HOST = "0.0.0.0"
-PORT = 514
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+HOST = os.getenv("SYSLOG_HOST", "0.0.0.0")
+PORT = int(os.getenv("SYSLOG_PORT", "514"))
 
 def parser():
+    start_pipeline()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((HOST, PORT))
     print(f"Listening for syslog messages on UDP {HOST}:{PORT}")
@@ -20,15 +21,7 @@ def parser():
         data, addr = sock.recvfrom(8192)
         source_ip = addr[0]
         raw_syslog = data.decode(errors="ignore").strip()
+        process_log(source_ip, raw_syslog)
 
-        result = normalize_log(source_ip, raw_syslog)
-
-        log_json = {
-            "received_at": datetime.now().isoformat(),
-            "source_ip": source_ip,
-            "vendor": result["vendor"],
-            "device_type": result["device_type"],
-            "facility": result["facility"],
-            "severity": result["severity"],
-            "fields": result["fields"],
-        }
+if __name__ == "__main__":
+    parser()

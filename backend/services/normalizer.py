@@ -1,12 +1,19 @@
+import hashlib
 import json
 import os
 import re
-import sys
+import time
 from pathlib import Path
+
 from dotenv import load_dotenv
 from openai import OpenAI
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from backend.database.db import load_templates, save_template
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+_OPENAI_KEY: str | None = os.getenv("OPENAI_API_KEY")
+_OPENAI_MODEL: str = os.getenv("OPENAI_MODEL_PARSER", "gpt-4.1")
+_OPENAI_CLIENT: OpenAI | None = OpenAI(api_key=_OPENAI_KEY) if _OPENAI_KEY else None
 
 _TEMPLATES: list[dict] = [
     {
@@ -36,9 +43,16 @@ _TEMPLATES: list[dict] = [
     },
 ]
 
-_AI_FAILED: set[str] = set()
+_AI_FAILED: dict[str, float] = {}
+_AI_FAILED_TTL: float = 300.0  # retry after 5 minutes
 
 _KV_RE = re.compile(r'(\w+)=("[^"]*"|\S+)')
+
+# Load AI-generated templates persisted in the database
+def init_templates() -> None:
+    for t in load_templates():
+        if not any(existing["fingerprint"] == t["fingerprint"] for existing in _TEMPLATES):
+            _TEMPLATES.append(t)
 
 # Decode syslog priority number (facility, severity)
 def _decode_priority(priority: int) -> tuple[int, int]:
@@ -81,16 +95,11 @@ def _parse_kv(raw_syslog: str, header_regex: str | None = None) -> dict | None:
         fields[key] = val.strip('"')
     return fields if fields else None
 
-# Generate parsing template
+# Generate parsing template via OpenAI
 def _ai_generate_template(raw_syslog: str, fingerprint: str) -> dict | None:
-    load_dotenv(Path(__file__).parent.parent / ".env")
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("OPENAI_API_KEY not set — cannot generate template for '%s'", fingerprint)
+    if not _OPENAI_CLIENT:
+        print(f"OPENAI_API_KEY not set — cannot generate template for '{fingerprint}'")
         return None
-
-    model = os.getenv("OPENAI_MODEL_PARSER", "gpt-4.1")
-    client = OpenAI(api_key=api_key)
 
     prompt = f"""You are a log-parsing expert for a Security Operations Centre (SOC).
 
@@ -122,18 +131,20 @@ Required JSON format:
   "fields": ["list", "of", "expected", "field", "names"]
 }}"""
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0,
-        max_tokens=600,
-    )
-
-    content = response.choices[0].message.content.strip()
-    content = re.sub(r"^```(?:json)?\s*", "", content)
-    content = re.sub(r"\s*```$", "", content)
-
-    return json.loads(content)
+    content: str | None = None
+    try:
+        response = _OPENAI_CLIENT.chat.completions.create(
+            model=_OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=600,
+        )
+        content = response.choices[0].message.content.strip()
+        content = re.sub(r"^```(?:json)?\s*", "", content)
+        content = re.sub(r"\s*```$", "", content)
+        return json.loads(content)
+    except Exception:
+        return {"raw": content if content is not None else ""}
 
 # Main entry point
 def normalize_log(source_ip: str, raw_syslog: str) -> dict:
@@ -155,9 +166,11 @@ def normalize_log(source_ip: str, raw_syslog: str) -> dict:
                 "device_type": template["device_type"],
             }
 
-    # No template match, generate with AI
-    if fp in _AI_FAILED:
+    # No template match — check if this fingerprint recently failed AI
+    failed_at = _AI_FAILED.get(fp)
+    if failed_at and (time.time() - failed_at) < _AI_FAILED_TTL:
         return {"fields": {"raw": raw_syslog}, "facility": facility, "severity": severity, "vendor": "unknown", "device_type": "unknown"}
+    _AI_FAILED.pop(fp, None)
     ai = _ai_generate_template(raw_syslog, fp)
 
     if ai:
@@ -176,6 +189,17 @@ def normalize_log(source_ip: str, raw_syslog: str) -> dict:
 
         _TEMPLATES.append(new_template)
 
+        # Persist to database for future sessions
+        save_template(
+            fingerprint=fp,
+            vendor=new_template["vendor"],
+            device_type=new_template["device_type"],
+            parse_mode=parse_mode,
+            regex=new_template.get("regex", ""),
+            header_regex=new_template.get("header_regex", ""),
+            fields=ai.get("fields", []),
+        )
+
         # Apply the new template
         if parse_mode == "kv":
             fields = _parse_kv(raw_syslog, ai.get("header_regex"))
@@ -192,7 +216,7 @@ def normalize_log(source_ip: str, raw_syslog: str) -> dict:
         }
 
     # Complete fallback, return raw
-    _AI_FAILED.add(fp)
+    _AI_FAILED[fp] = time.time()
     return {
         "fields": {"raw": raw_syslog},
         "facility": facility,
