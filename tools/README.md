@@ -12,18 +12,19 @@
 
 # How to use attempt 2
 
-## Option 1: Stream to stdout (pipe to backend)
+## Option 1: Stream to stdout
 ```bash
-python tools/Log_Stream_Simulator_attempt_2.py \
-    --parquet data/cic-collection.parquet \
-    --max-flows 500 --speed 10 --format fortigate
+python tools/Log_Stream_Simulator_attempt_2.py --parquet data/cic-collection.parquet --max-flows 200 --speed 10 --format fortigate
 ```
 
-## Option 2: REST API mode (backend polls this like a real FortiGate)
+## Option 2: CSV-style logs to a file
 ```bash
-python tools/Log_Stream_Simulator_attempt_2.py \
-    --parquet data/cic-collection.parquet \
-    --serve --port 5050 --speed 0 --max-flows 1000
+python tools/Log_Stream_Simulator_attempt_2.py --parquet data/Botnet-Friday-no-metadata.parquet --format paloalto --output /tmp/pa_logs.csv --speed 0
+```
+
+## Option 3: REST API mode that the backend can poll (like a real FortiGate Firewall)
+```bash
+python tools/Log_Stream_Simulator_attempt_2.py --parquet data/cic-collection.parquet --serve --port 5050 --speed 0 --max-flows 1000
 ```
 
 ## Then from your backend:
@@ -55,8 +56,6 @@ python tools/Log_Stream_Simulator.py --parquet data/cic-collection.parquet --end
 ```bash
 python tools/Log_Stream_Simulator.py --parquet data/cic-collection.parquet --output logs.jsonl --speed 0
 ```
-
----
 
 # Recommended usage pattern for OpenAI API testing for attempt 1
 

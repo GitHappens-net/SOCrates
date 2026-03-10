@@ -2,10 +2,9 @@
 Log Stream Simulator v2 — FortiGate / PaloAlto Native Format
 =============================================================
 Reads CIC-IDS-2017 / CIC-IDS-Collection parquet datasets and produces a
-simulated real-time stream of **vendor-native** firewall logs that are
+simulated real-time stream of vendor-native firewall logs that are
 indistinguishable from real FortiGate or PaloAlto REST API output.
-
-Designed for the SOCrates hackathon — logs are fed to an OpenAI-powered
+These logs are meant to test the functionality of an OpenAI-powered
 SOC assistant that reasons over them exactly as it would over production
 firewall telemetry.
 
@@ -15,22 +14,7 @@ Modes
 * **REST API server** (``--serve``) — the SOCrates backend polls this
   endpoint as if it were a real FortiGate / PaloAlto appliance.
 
-Usage
------
-  # Stream FortiGate-format logs at 10× speed, 200 flows
-  python Log_Stream_Simulator_attempt_2.py \\
-      --parquet ../data/cic-collection.parquet \\
-      --max-flows 200 --speed 10 --format fortigate
-
-  # Start a REST API on port 5050 that the backend can poll
-  python Log_Stream_Simulator_attempt_2.py \\
-      --parquet ../data/DoS-Wednesday-no-metadata.parquet \\
-      --serve --port 5050 --format fortigate --speed 0
-
-  # PaloAlto CSV-style logs to a file
-  python Log_Stream_Simulator_attempt_2.py \\
-      --parquet ../data/Botnet-Friday-no-metadata.parquet \\
-      --format paloalto --output /tmp/pa_logs.csv --speed 0
+Usage examples at ./README.md
 """
 
 from __future__ import annotations
@@ -141,7 +125,6 @@ def _synth_country(flow_id: int) -> tuple[str, str]:
 # FortiGate FIELD MAPPING
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Attack label → FortiGate action
 _FG_ACTION: dict[str, str] = {
     "Benign":             "close",
     "Botnet":             "deny",
@@ -160,7 +143,6 @@ _FG_ACTION: dict[str, str] = {
     "Bruteforce-FTP":     "deny",
 }
 
-# Destination port → FortiGate service name
 _FG_SERVICE: dict[int, str] = {
     22: "SSH", 53: "DNS", 80: "HTTP", 443: "HTTPS",
     445: "SMB", 993: "IMAPS", 3389: "RDP", 8080: "HTTP",
@@ -170,7 +152,6 @@ _FG_SERVICE: dict[int, str] = {
 
 # Label → FortiGate app/appcat/apprisk enrichment
 _FG_APP_MAP: dict[str, tuple[str, str, str]] = {
-    # (app, appcat, apprisk)
     "Benign":                ("SSL_TLS", "Network.Service", "low"),
     "Botnet":                ("IRC", "Collaboration", "critical"),
     "Infiltration":          ("SMB", "File.Sharing", "elevated"),
@@ -214,7 +195,6 @@ _FG_LEVEL: dict[str, str] = {
 
 # Label → FortiGate UTM subtype/logid for attacks
 _FG_UTM: dict[str, tuple[str, str]] = {
-    # (subtype, logid)
     "Botnet":                ("botnet", "0211054601"),
     "Webattack-XSS":         ("webfilter", "0316013056"),
     "Webattack-SQLi":        ("webfilter", "0316013057"),
@@ -289,7 +269,6 @@ def format_fortigate(row: pd.Series, ts: datetime, flow_id: int) -> str:
 
     # Protocol from dataset (6=TCP, 17=UDP) or inferred
     proto_num = int(row.get("Protocol", 6)) if "Protocol" in row.index else 6
-    proto_name = {6: "TCP", 17: "UDP", 1: "ICMP"}.get(proto_num, "TCP")
 
     # Interface pair (deterministic per flow)
     intf_src, intf_dst = _FG_INTERFACES[h[6] % len(_FG_INTERFACES)]
@@ -305,15 +284,13 @@ def format_fortigate(row: pd.Series, ts: datetime, flow_id: int) -> str:
     rcvd_byte = max(int(float(row["Bwd Packets Length Total"])), 0)
     sent_pkt = max(int(row["Total Fwd Packets"]), 0)
     rcvd_pkt = max(int(row["Total Backward Packets"]), 0)
+    # Country from external IP
+    country_name, _ = _synth_country(flow_id)
 
-    # Country for external destination
-    country_name, country_code = _synth_country(flow_id)
-
-    # Unique session ID
+    # Session ID
     session_id = (flow_id * 7919 + h[0]) % 10_000_000
 
-    # Build the FortiGate key=value log line
-    # Field order matches real FortiGate output
+    # FortiGate key=value log line
     fields = [
         f'date={ts.strftime("%Y-%m-%d")}',
         f'time={ts.strftime("%H:%M:%S")}',
@@ -393,7 +370,6 @@ def _threat_weight(label: str) -> int:
 # PaloAlto LOG FORMATTER
 # ═══════════════════════════════════════════════════════════════════════════
 
-# PaloAlto action mapping
 _PA_ACTION: dict[str, str] = {
     "Benign": "allow",
     "Botnet": "deny",
@@ -463,17 +439,17 @@ def format_paloalto_csv(row: pd.Series, ts: datetime, flow_id: int) -> str:
     sent_pkt = max(int(row["Total Fwd Packets"]), 0)
     rcvd_pkt = max(int(row["Total Backward Packets"]), 0)
 
-    country_name, country_code = _synth_country(flow_id)
+    country_name, _ = _synth_country(flow_id)
     session_id = (flow_id * 7919 + h[0]) % 10_000_000
 
     # PaloAlto CSV syslog format — field order matches real PA output
     fields = [
-        ts.strftime("%Y/%m/%d %H:%M:%S"),   # receive_time
+        ts.strftime("%Y/%m/%d %H:%M:%S"),     # receive_time
         "PA-5220",                            # serial
         "TRAFFIC",                            # type
         "end",                                # subtype
         "2025.0.1",                           # config_version
-        ts.strftime("%Y/%m/%d %H:%M:%S"),    # generated_time
+        ts.strftime("%Y/%m/%d %H:%M:%S"),     # generated_time
         src_ip,                               # src
         dst_ip,                               # dst
         "",                                   # natsrc
@@ -502,7 +478,7 @@ def format_paloalto_csv(row: pd.Series, ts: datetime, flow_id: int) -> str:
         str(sent_byte),                       # bytes_sent
         str(rcvd_byte),                       # bytes_received
         str(sent_pkt + rcvd_pkt),             # packets
-        ts.strftime("%Y/%m/%d %H:%M:%S"),    # start_time
+        ts.strftime("%Y/%m/%d %H:%M:%S"),     # start_time
         str(duration_sec),                    # elapsed
         "networking",                         # category
         "",                                   # future_use_2
@@ -537,16 +513,8 @@ PA_CSV_HEADER = (
 # TIMESTAMP SYNTHESIS
 # ═══════════════════════════════════════════════════════════════════════════
 
-def generate_flow_timestamp(
-    base: datetime,
-    flow_id: int,
-    total_flows: int,
-    speed: float,
-) -> datetime:
-    """
-    Generate a timestamp for a flow.  Flows are spread over a time window
-    proportional to the total number of flows (approx 1-3 flows/second).
-    """
+def generate_flow_timestamp(base: datetime, flow_id: int) -> datetime:
+    """Generate a timestamp for a flow, spaced ~0.3-1.5s apart."""
     avg_gap_sec = random.uniform(0.3, 1.5)
     offset = timedelta(seconds=flow_id * avg_gap_sec)
     return base + offset
@@ -590,12 +558,10 @@ def stream_logs(
         start_time = datetime.now(tz=timezone.utc)
 
     formatter = format_fortigate if fmt == "fortigate" else format_paloalto_csv
-    total = len(df)
-
     wall_anchor = time.monotonic()
 
     for flow_id, (_, row) in enumerate(df.iterrows()):
-        ts = generate_flow_timestamp(start_time, flow_id, total, speed)
+        ts = generate_flow_timestamp(start_time, flow_id)
         line = formatter(row, ts, flow_id)
 
         # Real-time pacing
@@ -618,10 +584,11 @@ def sink_stdout(line: str) -> None:
 
 
 def sink_file(path: Path, fmt: str):
-    fh = open(path, "a", encoding="utf-8")
-    header_written = path.exists() and path.stat().st_size > 0
-    if fmt == "paloalto" and not header_written:
+    mode = "w" if fmt == "paloalto" else "a"
+    fh = open(path, mode, encoding="utf-8")
+    if fmt == "paloalto":
         fh.write(PA_CSV_HEADER + "\n")
+        fh.flush()
 
     def _write(line: str) -> None:
         fh.write(line + "\n")
@@ -682,7 +649,6 @@ def run_server(df: pd.DataFrame, host: str, port: int, fmt: str,
         def do_GET(self):
             nonlocal read_cursor
             if self.path.startswith("/api/v2/log"):
-                # Mimic FortiGate REST API response
                 batch_size = 50
                 with buffer_lock:
                     batch = log_buffer[read_cursor:read_cursor + batch_size]
@@ -690,7 +656,6 @@ def run_server(df: pd.DataFrame, host: str, port: int, fmt: str,
                     total = len(log_buffer)
 
                 if fmt == "fortigate":
-                    # FortiGate API returns JSON with results array
                     response = {
                         "http_method": "GET",
                         "results": batch,
@@ -703,7 +668,6 @@ def run_server(df: pd.DataFrame, host: str, port: int, fmt: str,
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                 else:
-                    # PaloAlto — return CSV lines
                     body = (PA_CSV_HEADER + "\n" + "\n".join(batch)).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "text/csv")
@@ -729,7 +693,6 @@ def run_server(df: pd.DataFrame, host: str, port: int, fmt: str,
                 self.end_headers()
 
         def log_message(self, format, *args):
-            # Suppress default access logging to stderr
             pass
 
     server = HTTPServer((host, port), LogHandler)
@@ -811,21 +774,15 @@ def main() -> None:
     print(f"[*] Labels: {sorted(df['Label'].unique())}", file=sys.stderr)
     print(f"[*] Format: {args.log_format}", file=sys.stderr)
 
-    # --- Server mode ---
     if args.serve:
         run_server(df, args.host, args.port, args.log_format,
                    args.speed, args.max_flows, args.seed)
         return
 
-    # --- Streaming mode ---
     sinks = []
     if args.output:
         sinks.append(sink_file(args.output, args.log_format))
         print(f"[*] Writing to {args.output}", file=sys.stderr)
-        if args.log_format == "paloalto":
-            # Write CSV header
-            with open(args.output, "w", encoding="utf-8") as fh:
-                fh.write(PA_CSV_HEADER + "\n")
     if args.endpoint:
         sinks.append(sink_http(args.endpoint))
         print(f"[*] Posting to {args.endpoint}", file=sys.stderr)
