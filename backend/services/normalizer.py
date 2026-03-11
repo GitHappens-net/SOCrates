@@ -41,6 +41,22 @@ _TEMPLATES: list[dict] = [
             r"(?P<message>.*)"
         ),
     },
+    {
+        # FortiGate logs are purely key=value after the optional syslog priority.
+        # Distinctive markers: date=YYYY-MM-DD, devname=, logid=
+        # All log types (traffic, utm, event, gtp, ...) follow this same format.
+        "fingerprint": "fortigate_kv",
+        "vendor": "Fortinet",
+        "device_type": "FortiGate Firewall",
+        "parse_mode": "kv",
+        # header_regex captures the syslog envelope and names the rest as kvpayload
+        # so _parse_kv() can auto-extract every field (srcip, dstip, action, logid, …)
+        "header_regex": (
+            r"^(?:<(?P<syslog_priority>\d+)>)?\s*"
+            r"(?P<kvpayload>date=\d{4}-\d{2}-\d{2}\s+time=\S+.+)"
+        ),
+        "regex": "",  # not used in kv mode
+    },
 ]
 
 _AI_FAILED: dict[str, float] = {}
@@ -67,6 +83,9 @@ def _extract_priority(raw_syslog: str) -> tuple[int, int]:
 
 # Identify log format by pattern matching
 def _fingerprint(source_ip: str, raw_syslog: str) -> str:
+    # FortiGate: always has date=YYYY-MM-DD and devname= in the same message
+    if re.search(r"date=\d{4}-\d{2}-\d{2}\b", raw_syslog) and re.search(r"\bdevname=", raw_syslog):
+        return "fortigate_kv"
     if re.search(r"%[A-Z0-9]+-\d+-[A-Z0-9_]+:", raw_syslog):
         return "cisco_ios_syslog"
     if re.search(r"<\d+>\d+:\s*\*?[A-Z][a-z]{2}\s+\d+\s+[\d:\.]+:", raw_syslog):

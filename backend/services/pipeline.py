@@ -1,51 +1,120 @@
+import queue
 import threading
 import time
 from datetime import datetime
 
-from backend.database.db import init_db, insert_log, upsert_device
+from backend.database.db import get_connection, init_db, insert_logs_batch, upsert_devices_batch
 from backend.services.normalizer import normalize_log, init_templates
 
-# Queue settings
-_BATCH_SIZE = 50
-_FLUSH_INTERVAL = 300  # seconds (5 minutes)
+# ---------------------------------------------------------------------------
+# Agent batch settings (unchanged behaviour)
+# ---------------------------------------------------------------------------
+_AGENT_BATCH_SIZE = 50
+_AGENT_FLUSH_INTERVAL = 300  # seconds (5 minutes)
 
-_queue: list[dict] = []
-_queue_lock = threading.Lock()
-_flush_timer: threading.Timer | None = None
+_agent_queue: list[dict] = []
+_agent_lock = threading.Lock()
+_agent_timer: threading.Timer | None = None
 
-# Placeholder — will be replaced by the real agent call
+# ---------------------------------------------------------------------------
+# DB writer settings
+# ---------------------------------------------------------------------------
+_DB_BATCH_SIZE = 50
+_DB_FLUSH_INTERVAL = 2.0  # seconds — short so logs hit the DB quickly
+
+# Work queue: the UDP receive loop enqueues normalised dicts here.
+# queue.Queue is thread-safe; no extra lock needed.
+_work_queue: queue.Queue = queue.Queue()
+
+# ---------------------------------------------------------------------------
+# Agent batch helpers (same logic as before)
+# ---------------------------------------------------------------------------
+
 def _on_batch_ready(batch: list[dict]) -> None:
     print(f"[pipeline] batch of {len(batch)} logs ready for agent analysis")
 
-# Flush the queue and send the batch to the agent stub
-def _flush_queue() -> None:
-    global _flush_timer
-    with _queue_lock:
-        if not _queue:
-            _reset_timer()
+def _flush_agent_queue() -> None:
+    global _agent_timer
+    with _agent_lock:
+        if not _agent_queue:
+            _reset_agent_timer()
             return
-        batch = list(_queue)
-        _queue.clear()
+        batch = list(_agent_queue)
+        _agent_queue.clear()
     _on_batch_ready(batch)
-    _reset_timer()
+    _reset_agent_timer()
 
-# Reset the periodic flush timer
-def _reset_timer() -> None:
-    global _flush_timer
-    if _flush_timer is not None:
-        _flush_timer.cancel()
-    _flush_timer = threading.Timer(_FLUSH_INTERVAL, _flush_queue)
-    _flush_timer.daemon = True
-    _flush_timer.start()
+def _reset_agent_timer() -> None:
+    global _agent_timer
+    if _agent_timer is not None:
+        _agent_timer.cancel()
+    _agent_timer = threading.Timer(_AGENT_FLUSH_INTERVAL, _flush_agent_queue)
+    _agent_timer.daemon = True
+    _agent_timer.start()
 
-# Extract hostname from parsed fields if present
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
 def _extract_hostname(fields: dict) -> str | None:
     for key in ("hostname", "host", "devname", "device_name", "syslog_host"):
         if key in fields and fields[key]:
             return fields[key]
     return None
 
-# Process one raw syslog message through the full pipeline
+# ---------------------------------------------------------------------------
+# DB writer thread — owns a single persistent SQLite connection
+# ---------------------------------------------------------------------------
+
+def _db_writer() -> None:
+    """
+    Background thread.  Holds one open SQLite connection for its entire
+    lifetime — no per-log connect/close overhead.  Reads log dicts from
+    _work_queue and writes to the DB in batches via executemany.
+    A None sentinel on the queue signals a clean shutdown.
+    """
+    conn = get_connection()
+    buffer: list[dict] = []
+    last_flush = time.monotonic()
+
+    while True:
+        try:
+            item = _work_queue.get(timeout=_DB_FLUSH_INTERVAL)
+            if item is None:          # shutdown sentinel
+                break
+            buffer.append(item)
+        except queue.Empty:
+            pass                      # timeout — fall through to flush check
+
+        now = time.monotonic()
+        if buffer and (len(buffer) >= _DB_BATCH_SIZE or (now - last_flush) >= _DB_FLUSH_INTERVAL):
+            try:
+                insert_logs_batch(conn, buffer)
+                upsert_devices_batch(conn, [
+                    (e["source_ip"], _extract_hostname(e["fields"]), e["vendor"], e["device_type"])
+                    for e in buffer
+                ])
+            except Exception as exc:
+                print(f"[pipeline] DB write error: {exc}")
+            buffer.clear()
+            last_flush = now
+
+    # Flush anything remaining before the thread exits
+    if buffer:
+        try:
+            insert_logs_batch(conn, buffer)
+            upsert_devices_batch(conn, [
+                (e["source_ip"], _extract_hostname(e["fields"]), e["vendor"], e["device_type"])
+                for e in buffer
+            ])
+        except Exception as exc:
+            print(f"[pipeline] DB final flush error: {exc}")
+    conn.close()
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def process_log(source_ip: str, raw_syslog: str) -> dict:
     received_at = datetime.now().isoformat()
     result = normalize_log(source_ip, raw_syslog)
@@ -61,45 +130,33 @@ def process_log(source_ip: str, raw_syslog: str) -> dict:
         "fields": result["fields"],
     }
 
-    # Write to database
-    insert_log(
-        received_at=received_at,
-        source_ip=source_ip,
-        vendor=result["vendor"],
-        device_type=result["device_type"],
-        facility=result["facility"],
-        severity=result["severity"],
-        raw_message=raw_syslog,
-        parsed_fields=result["fields"],
-    )
+    # Hand off to DB writer — non-blocking, returns in microseconds
+    _work_queue.put(log_entry)
 
-    # Update device inventory
-    hostname = _extract_hostname(result["fields"])
-    upsert_device(
-        ip=source_ip,
-        hostname=hostname,
-        vendor=result["vendor"],
-        device_type=result["device_type"],
-    )
-
-    # Add to agent queue
-    with _queue_lock:
-        _queue.append(log_entry)
-        if len(_queue) >= _BATCH_SIZE:
-            batch = list(_queue)
-            _queue.clear()
+    # Feed the agent queue (separate concern from DB writes)
+    with _agent_lock:
+        _agent_queue.append(log_entry)
+        if len(_agent_queue) >= _AGENT_BATCH_SIZE:
+            batch = list(_agent_queue)
+            _agent_queue.clear()
         else:
             batch = None
 
     if batch:
         _on_batch_ready(batch)
-        _reset_timer()
+        _reset_agent_timer()
 
     return log_entry
 
-# Called once at startup
 def start_pipeline() -> None:
     init_db()
     init_templates()
-    _reset_timer()
-    print(f"[pipeline] started — queue batch_size={_BATCH_SIZE} flush_interval={_FLUSH_INTERVAL}s")
+    _reset_agent_timer()
+    t = threading.Thread(target=_db_writer, name="db-writer", daemon=True)
+    t.start()
+    print(
+        f"[pipeline] started — "
+        f"agent batch={_AGENT_BATCH_SIZE} flush={_AGENT_FLUSH_INTERVAL}s | "
+        f"db batch={_DB_BATCH_SIZE} flush={_DB_FLUSH_INTERVAL}s"
+    )
+

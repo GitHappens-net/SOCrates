@@ -112,3 +112,37 @@ def upsert_device(ip: str, hostname: str | None, vendor: str, device_type: str) 
     )
     conn.commit()
     conn.close()
+
+# Batch operations — accept a caller-owned connection so the writer thread
+# can keep one connection open and avoid per-log open/close overhead.
+
+def insert_logs_batch(conn: sqlite3.Connection, logs: list[dict]) -> None:
+    """Insert a batch of normalised log dicts using a single executemany call."""
+    conn.executemany(
+        """INSERT INTO logs
+           (received_at, source_ip, vendor, device_type, facility, severity, raw_message, parsed_fields)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        [
+            (
+                log["received_at"], log["source_ip"], log["vendor"], log["device_type"],
+                log["facility"], log["severity"], log["raw_message"],
+                json.dumps(log["fields"]),
+            )
+            for log in logs
+        ],
+    )
+    conn.commit()
+
+def upsert_devices_batch(conn: sqlite3.Connection, rows: list[tuple]) -> None:
+    """Upsert a batch of (ip, hostname, vendor, device_type) tuples."""
+    conn.executemany(
+        """INSERT INTO devices (ip, hostname, vendor, device_type)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(ip) DO UPDATE SET
+               hostname    = COALESCE(excluded.hostname, devices.hostname),
+               vendor      = excluded.vendor,
+               device_type = excluded.device_type,
+               last_seen   = datetime('now')""",
+        rows,
+    )
+    conn.commit()
