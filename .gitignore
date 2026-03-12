@@ -1,3 +1,6 @@
 /data
-/tools/__pycache__
 /tools/Log_Stream_Generator/__pycache__
+/old
+.env
+*.db
+__pycache__/
