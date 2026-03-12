@@ -45,7 +45,6 @@ This starts three subsystems in one process:
 Convert a CIC-IDS CSV to parquet (one-time), then stream via syslog:
 
 ```powershell
-# The pre-built parquet collection is at data/datasets/CIC-IDS-Collection.parquet
 python -m tools.Log_Stream_Generator `
   --parquet data/datasets/CIC-IDS-Collection.parquet `
   --syslog --syslog-host 127.0.0.1 --syslog-port 514 `

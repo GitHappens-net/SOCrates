@@ -1,9 +1,11 @@
 from flask import Blueprint, jsonify, request
 
-from backend.agent.chat import chat, clear_session
-from backend.database.db import (
+from agent.chat import chat, clear_session
+from database.db import (
     clear_alerts, get_alert, get_alerts, get_devices_list,
-    get_log_stats, get_recent_logs, update_alert_status)
+    get_fortigate_devices, get_log_stats, get_recent_logs,
+    get_soar_action, get_soar_actions, update_alert_status)
+from services.soar import execute_soar_action
 
 api_bp = Blueprint("api", __name__)
 
@@ -85,3 +87,101 @@ def clear_chat():
     session_id = body.get("session_id", "default")
     clear_session(session_id)
     return jsonify({"cleared": True})
+
+
+# ---------------------------------------------------------------------------
+# SOAR
+# ---------------------------------------------------------------------------
+@api_bp.route("/soar/actions", methods=["POST"])
+def execute_soar():
+    body = request.get_json(silent=True) or {}
+    device_ip = str(body.get("device_ip", "")).strip()
+    action_type = str(body.get("action_type", "")).strip()
+    parameters = body.get("parameters") or {}
+    dry_run = bool(body.get("dry_run", False))
+    requested_by = str(body.get("requested_by", "api"))
+    source = str(body.get("source", "manual"))
+
+    if not device_ip:
+        return jsonify({"error": "device_ip is required"}), 400
+    if not action_type:
+        return jsonify({"error": "action_type is required"}), 400
+
+    res = execute_soar_action(
+        device_ip=device_ip,
+        action_type=action_type,
+        parameters=parameters,
+        requested_by=requested_by,
+        source=source,
+        dry_run=dry_run,
+    )
+    code = 200 if res.ok else 400
+    return jsonify(
+        {
+            "ok": res.ok,
+            "action_id": res.action_id,
+            "status": res.status,
+            "summary": res.summary,
+            "result": res.result,
+            "error": res.error,
+        }
+    ), code
+
+
+@api_bp.route("/soar/actions", methods=["GET"])
+def list_soar_actions():
+    limit = request.args.get("limit", 50, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    status = request.args.get("status")
+    return jsonify(get_soar_actions(limit=min(limit, 500), offset=offset, status=status))
+
+
+@api_bp.route("/soar/actions/<int:action_id>", methods=["GET"])
+def single_soar_action(action_id: int):
+    action = get_soar_action(action_id)
+    if not action:
+        return jsonify({"error": "SOAR action not found"}), 404
+    return jsonify(action)
+
+
+@api_bp.route("/soar/playbooks/contain-host", methods=["POST"])
+def soar_contain_host():
+    body = request.get_json(silent=True) or {}
+    target_ip = str(body.get("target_ip", "")).strip()
+    dry_run = bool(body.get("dry_run", False))
+
+    if not target_ip:
+        return jsonify({"error": "target_ip is required"}), 400
+
+    fortigates = get_fortigate_devices()
+    if not fortigates:
+        return jsonify({"error": "No Fortinet devices available in inventory"}), 400
+
+    results: list[dict] = []
+    for dev in fortigates:
+        res = execute_soar_action(
+            device_ip=dev["ip"],
+            action_type="block_ip",
+            parameters={"target_ip": target_ip},
+            requested_by="api",
+            source="playbook:contain-host",
+            dry_run=dry_run,
+        )
+        results.append(
+            {
+                "device_ip": dev["ip"],
+                "action_id": res.action_id,
+                "ok": res.ok,
+                "status": res.status,
+                "summary": res.summary,
+                "error": res.error,
+            }
+        )
+
+    return jsonify(
+        {
+            "target_ip": target_ip,
+            "dry_run": dry_run,
+            "results": results,
+        }
+    )

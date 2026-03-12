@@ -1,9 +1,9 @@
 import socket
 import threading
 
-from backend.api.app import create_app
-from backend.config import SYSLOG_HOST, SYSLOG_PORT, API_HOST, API_PORT
-from backend.services.pipeline import process_log, start_pipeline
+from api.app import create_app
+from config import SYSLOG_HOST, SYSLOG_PORT, API_HOST, API_PORT
+from services.pipeline import process_log, start_pipeline
 
 
 def _run_api() -> None:
