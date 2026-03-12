@@ -3,13 +3,14 @@ import threading
 import time
 from datetime import datetime
 
+from backend.agent.analyzer import analyze_batch_async
 from backend.database.db import get_connection, init_db, insert_logs_batch, upsert_devices_batch
 from backend.services.normalizer import normalize_log, init_templates
 
 # ---------------------------------------------------------------------------
-# Agent batch settings (unchanged behaviour)
+# Agent batch settings
 # ---------------------------------------------------------------------------
-_AGENT_BATCH_SIZE = 50
+_AGENT_BATCH_SIZE = 100
 _AGENT_FLUSH_INTERVAL = 300  # seconds (5 minutes)
 
 _agent_queue: list[dict] = []
@@ -32,6 +33,7 @@ _work_queue: queue.Queue = queue.Queue()
 
 def _on_batch_ready(batch: list[dict]) -> None:
     print(f"[pipeline] batch of {len(batch)} logs ready for agent analysis")
+    analyze_batch_async(batch)
 
 def _flush_agent_queue() -> None:
     global _agent_timer
