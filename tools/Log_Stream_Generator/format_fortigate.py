@@ -174,6 +174,8 @@ def format_fortigate(row: pd.Series, ts: datetime, flow_id: int) -> str:
         f'time={ts.strftime("%H:%M:%S")}',
         f'eventtime={int(ts.timestamp())}',
         f'tz="+0000"',
+        f'devname="FGT-SOCrates"',
+        f'devid="FGT60FSOCRATES00"',
         f'logid="{logid}"',
         f'type="traffic"',
         f'subtype="forward"',

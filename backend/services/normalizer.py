@@ -53,6 +53,7 @@ _TEMPLATES: list[dict] = [
         # so _parse_kv() can auto-extract every field (srcip, dstip, action, logid, …)
         "header_regex": (
             r"^(?:<(?P<syslog_priority>\d+)>)?\s*"
+            r"(?:[^\s:=]+:\s+)?"
             r"(?P<kvpayload>date=\d{4}-\d{2}-\d{2}\s+time=\S+.+)"
         ),
         "regex": "",  # not used in kv mode
