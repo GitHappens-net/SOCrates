@@ -199,10 +199,16 @@ def _deep_analyze(
         resp = _CLIENT.chat.completions.create(
             model=_MODEL_REASONING,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_completion_tokens=2000,
+            max_completion_tokens=16000,
         )
-        return _parse_json(resp.choices[0].message.content)
+        raw = resp.choices[0].message.content
+        if not raw:
+            print(f"[analyzer] deep-analysis: empty response (finish_reason={resp.choices[0].finish_reason})")
+            return None
+        result = _parse_json(raw)
+        if result is None:
+            print(f"[analyzer] deep-analysis: JSON parse failed on: {raw[:300]}")
+        return result
     except Exception as exc:
         print(f"[analyzer] deep-analysis API error: {exc}")
         return None

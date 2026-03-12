@@ -106,7 +106,7 @@ def chat(message: str, session_id: str = "default") -> str:
             model=_MODEL,
             messages=messages,
             temperature=0.3,
-            max_completion_tokens=2000,
+            max_completion_tokens=16000,
         )
         reply = resp.choices[0].message.content.strip()
     except Exception as exc:
