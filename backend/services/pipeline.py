@@ -7,30 +7,23 @@ from backend.agent.analyzer import analyze_batch_async
 from backend.database.db import get_connection, init_db, insert_logs_batch, upsert_devices_batch
 from backend.services.normalizer import normalize_log, init_templates
 
-# ---------------------------------------------------------------------------
 # Agent batch settings
-# ---------------------------------------------------------------------------
 _AGENT_BATCH_SIZE = 100
-_AGENT_FLUSH_INTERVAL = 300  # seconds (5 minutes)
+_AGENT_FLUSH_INTERVAL = 300  # In seconds
 
 _agent_queue: list[dict] = []
 _agent_lock = threading.Lock()
 _agent_timer: threading.Timer | None = None
 
-# ---------------------------------------------------------------------------
 # DB writer settings
-# ---------------------------------------------------------------------------
 _DB_BATCH_SIZE = 50
 _DB_FLUSH_INTERVAL = 2.0  # seconds
 
-# Work queue: the UDP receive loop enqueues normalised dicts here.
-# queue.Queue is thread-safe; no extra lock needed.
 _work_queue: queue.Queue = queue.Queue()
 
 # ---------------------------------------------------------------------------
 # Agent batch helpers
 # ---------------------------------------------------------------------------
-
 def _on_batch_ready(batch: list[dict]) -> None:
     print(f"[pipeline] batch of {len(batch)} logs ready for agent analysis")
     analyze_batch_async(batch)
@@ -55,9 +48,8 @@ def _reset_agent_timer() -> None:
     _agent_timer.start()
 
 # ---------------------------------------------------------------------------
-# Helper
+# Helper functions
 # ---------------------------------------------------------------------------
-
 def _extract_hostname(fields: dict) -> str | None:
     for key in ("hostname", "host", "devname", "device_name", "syslog_host"):
         if key in fields and fields[key]:
@@ -65,16 +57,9 @@ def _extract_hostname(fields: dict) -> str | None:
     return None
 
 # ---------------------------------------------------------------------------
-# DB writer thread — owns a single persistent SQLite connection
+# DB writer thread, owns a single persistent SQLite connection
 # ---------------------------------------------------------------------------
-
 def _db_writer() -> None:
-    """
-    Background thread.  Holds one open SQLite connection for its entire
-    lifetime — no per-log connect/close overhead.  Reads log dicts from
-    _work_queue and writes to the DB in batches via executemany.
-    A None sentinel on the queue signals a clean shutdown.
-    """
     conn = get_connection()
     buffer: list[dict] = []
     last_flush = time.monotonic()
@@ -116,7 +101,6 @@ def _db_writer() -> None:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-
 def process_log(source_ip: str, raw_syslog: str) -> dict:
     received_at = datetime.now().isoformat()
     result = normalize_log(source_ip, raw_syslog)
@@ -161,4 +145,3 @@ def start_pipeline() -> None:
         f"agent batch={_AGENT_BATCH_SIZE} flush={_AGENT_FLUSH_INTERVAL}s | "
         f"db batch={_DB_BATCH_SIZE} flush={_DB_FLUSH_INTERVAL}s"
     )
-

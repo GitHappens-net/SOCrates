@@ -1,29 +1,22 @@
-"""REST API routes for the SOCrates dashboard."""
 from flask import Blueprint, jsonify, request
 
 from backend.agent.chat import chat, clear_session
 from backend.database.db import (
-    clear_alerts,
-    get_alert,
-    get_alerts,
-    get_devices_list,
-    get_log_stats,
-    get_recent_logs,
-    update_alert_status,
-)
+    clear_alerts, get_alert, get_alerts, get_devices_list,
+    get_log_stats, get_recent_logs, update_alert_status)
 
 api_bp = Blueprint("api", __name__)
 
-
-# ── Alerts ────────────────────────────────────────────────────────────────
-
+# ---------------------------------------------------------------------------
+# Alerts
+# ---------------------------------------------------------------------------
 @api_bp.route("/alerts", methods=["GET"])
 def list_alerts():
     status = request.args.get("status")
     severity = request.args.get("severity")
     limit = request.args.get("limit", 50, type=int)
-    return jsonify(get_alerts(status=status, severity=severity, limit=limit))
-
+    offset = request.args.get("offset", 0, type=int)
+    return jsonify(get_alerts(status=status, severity=severity, limit=limit, offset=offset))
 
 @api_bp.route("/alerts/<int:alert_id>", methods=["GET"])
 def get_single_alert(alert_id: int):
@@ -31,7 +24,6 @@ def get_single_alert(alert_id: int):
     if not alert:
         return jsonify({"error": "Alert not found"}), 404
     return jsonify(alert)
-
 
 @api_bp.route("/alerts/<int:alert_id>", methods=["PATCH"])
 def patch_alert(alert_id: int):
@@ -43,35 +35,40 @@ def patch_alert(alert_id: int):
         return jsonify(get_alert(alert_id))
     return jsonify({"error": "Alert not found"}), 404
 
-
 @api_bp.route("/alerts", methods=["DELETE"])
 def delete_alerts():
     count = clear_alerts()
     return jsonify({"cleared": count})
 
-
-# ── Devices ───────────────────────────────────────────────────────────────
-
+# ---------------------------------------------------------------------------
+# Devices
+# ---------------------------------------------------------------------------
 @api_bp.route("/devices", methods=["GET"])
 def list_devices():
     return jsonify(get_devices_list())
 
-
-# ── Logs ──────────────────────────────────────────────────────────────────
-
+# ---------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------
 @api_bp.route("/logs", methods=["GET"])
 def list_logs():
     limit = request.args.get("limit", 50, type=int)
-    return jsonify(get_recent_logs(limit=min(limit, 500)))
+    offset = request.args.get("offset", 0, type=int)
+    return jsonify(get_recent_logs(limit=min(limit, 500), offset=offset))
 
+@api_bp.route("/devices/<path:device_ip>/logs", methods=["GET"])
+def device_logs(device_ip: str):
+    limit = request.args.get("limit", 50, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    return jsonify(get_recent_logs(limit=min(limit, 500), offset=offset, source_ip=device_ip))
 
 @api_bp.route("/stats", methods=["GET"])
 def stats():
     return jsonify(get_log_stats())
 
-
-# ── Chat ──────────────────────────────────────────────────────────────────
-
+# ---------------------------------------------------------------------------
+# Chat
+# ---------------------------------------------------------------------------
 @api_bp.route("/chat", methods=["POST"])
 def chat_endpoint():
     body = request.get_json(silent=True) or {}
@@ -82,11 +79,9 @@ def chat_endpoint():
     reply = chat(message, session_id=session_id)
     return jsonify({"reply": reply, "session_id": session_id})
 
-
 @api_bp.route("/chat", methods=["DELETE"])
 def clear_chat():
     body = request.get_json(silent=True) or {}
     session_id = body.get("session_id", "default")
     clear_session(session_id)
-    return jsonify({"cleared": True})
     return jsonify({"cleared": True})

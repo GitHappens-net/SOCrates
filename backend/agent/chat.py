@@ -1,29 +1,12 @@
-"""
-SOCrates interactive chat — context-aware conversation with GPT-5.1.
-
-Maintains per-session conversation history in memory and injects
-live infrastructure context (alerts, devices, log stats) into
-every exchange so the model can answer questions like:
-  - "show me the latest critical events"
-  - "can you correlate the events — is an attack taking place?"
-  - "how do I block this on the FortiGate?"
-"""
 from __future__ import annotations
 
-import os
 import threading
-from pathlib import Path
 
-from dotenv import load_dotenv
-from openai import OpenAI
-
+from backend.config import OPENAI_CLIENT, OPENAI_MODEL_REASONING
 from backend.database.db import get_alerts, get_devices_list, get_log_stats
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-
-_OPENAI_KEY: str | None = os.getenv("OPENAI_API_KEY")
-_MODEL: str = os.getenv("OPENAI_MODEL_REASONING", "gpt-5.1")
-_CLIENT: OpenAI | None = OpenAI(api_key=_OPENAI_KEY) if _OPENAI_KEY else None
+_CLIENT: object | None = OPENAI_CLIENT
+_MODEL: str = OPENAI_MODEL_REASONING
 
 _sessions: dict[str, list[dict]] = {}
 _lock = threading.Lock()
@@ -54,7 +37,6 @@ Guidelines:
 {stats}
 """
 
-
 def _build_system_prompt() -> str:
     devices = get_devices_list()
     alerts = get_alerts(limit=25)
@@ -79,16 +61,9 @@ def _build_system_prompt() -> str:
         f"Top devices: {stats['by_device']}"
     )
 
-    return _SYSTEM_PROMPT.format(
-        devices=devices_text, alerts=alerts_text, stats=stats_text,
-    )
-
+    return _SYSTEM_PROMPT.format(devices=devices_text, alerts=alerts_text, stats=stats_text)
 
 def chat(message: str, session_id: str = "default") -> str:
-    """
-    Send a user message and get a context-aware response.
-    Conversation history is maintained per session_id.
-    """
     if not _CLIENT:
         return "Error: OPENAI_API_KEY is not configured."
 
@@ -121,7 +96,6 @@ def chat(message: str, session_id: str = "default") -> str:
             history[:] = history[-_MAX_HISTORY:]
 
     return reply
-
 
 def clear_session(session_id: str = "default") -> None:
     with _lock:

@@ -1,87 +1,95 @@
-# SOCrates Backend
+# Backend
 
-AI-powered Security Operations Centre backend — ingests syslog streams, auto-detects log formats, runs two-tier GPT analysis, and exposes a REST API for dashboards and interactive SOC chat.
+## Quick Start
+
+### 1. Install dependencies
+
+```powershell
+pip install -r backend/requirements.txt
+```
+
+### 2. Configure environment
+
+Create `backend/.env`:
+
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL_AGENT=gpt-4.1        # Tier 1 triage model
+OPENAI_MODEL_REASONING=gpt-5.1    # Tier 2 deep analysis + chat model
+
+# Optional — defaults shown
+SYSLOG_HOST=0.0.0.0
+SYSLOG_PORT=514
+API_HOST=0.0.0.0
+API_PORT=5000
+```
+
+> **Windows note:** UDP port 514 requires an elevated (Administrator) shell.
+> Set `SYSLOG_PORT=5514` in `.env` to avoid this during development.
+
+### 3. Start the backend
+
+Run from the **repo root** so `backend` is importable as a package:
+
+```powershell
+python -m backend.main
+```
+
+This starts three subsystems in one process:
+1. **Pipeline** — DB writer thread + agent analysis queue
+2. **REST API** — Flask on `API_HOST:API_PORT` (background thread)
+3. **Syslog UDP listener** — `SYSLOG_HOST:SYSLOG_PORT` (main thread)
+
+### 4. Stream test logs
+
+Convert a CIC-IDS CSV to parquet (one-time), then stream via syslog:
+
+```powershell
+# The pre-built parquet collection is at data/datasets/CIC-IDS-Collection.parquet
+python -m tools.Log_Stream_Generator `
+  --parquet data/datasets/CIC-IDS-Collection.parquet `
+  --syslog --syslog-host 127.0.0.1 --syslog-port 514 `
+  --max-flows 200 --speed 0
+```
 
 ---
 
-## Module Map
+## REST API Reference
 
-```
-backend/
-├── .env                     # Configuration (API keys, model selection, ports)
-├── requirements.txt         # Python dependencies
-│
-├── services/
-│   ├── parser.py            # Entry point — UDP syslog listener + Flask API launcher
-│   ├── pipeline.py          # Ingestion pipeline — normalizes, batches, writes DB, feeds agent
-│   └── normalizer.py        # Log format detection — built-in templates + AI-generated regex
-│
-├── agent/
-│   ├── analyzer.py          # Two-tier threat analysis (GPT-4.1 triage → GPT-5.1 deep)
-│   └── chat.py              # Context-aware SOC chat (GPT-5.1)
-│
-├── api/
-│   ├── app.py               # Flask application factory
-│   └── routes.py            # REST API endpoints (alerts, devices, logs, stats, chat)
-│
-└── database/
-    ├── db.py                # SQLite (WAL) — schema, CRUD, batch ops, query helpers
-    └── socrates.db          # Auto-created at runtime
-```
+All routes are prefixed with `/api`.
 
----
+### Alerts
 
-## Data Flow
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/alerts` | List alerts. Query params: `status`, `severity`, `limit` (default 50), `offset` (default 0) |
+| `GET` | `/alerts/<id>` | Get a single alert by ID |
+| `PATCH` | `/alerts/<id>` | Update status. Body: `{"status": "open\|acknowledged\|resolved\|dismissed"}` |
+| `DELETE` | `/alerts` | Clear all resolved/dismissed alerts |
 
-```
-                        UDP :514
-Log Source ──────────────────────────> parser.py
-                                          │
-                                          ▼
-                                    normalizer.py
-                              ┌─── fingerprint + parse ───┐
-                              │   (3 built-in templates   │
-                              │   + GPT-4.1 AI fallback)  │
-                              └───────────┬───────────────┘
-                                          │ normalized dict
-                                          ▼
-                                    pipeline.py
-                           ┌──────────┼──────────┐
-                           │          │          │
-                    DB writer    Agent queue   Device tracker
-                    (batch 50    (batch 100    (auto upsert)
-                     / 2s)        / 5min)
-                           │          │
-                           ▼          ▼
-                       socrates.db   analyzer.py
-                                      ├─ Tier 1: GPT-4.1 triage
-                                      │   └─ threats? ──> Tier 2
-                                      └─ Tier 2: GPT-5.1 deep analysis
-                                            └─ insert_alert()
-                                                    │
-                                                    ▼
-                                              routes.py (:5000)
-                                              ├─ /api/alerts
-                                              ├─ /api/devices
-                                              ├─ /api/logs
-                                              ├─ /api/stats
-                                              └─ /api/chat (GPT-5.1)
-```
+### Devices & Logs
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/devices` | List all known devices |
+| `GET` | `/devices/<ip>/logs` | Logs for a specific device IP. Params: `limit`, `offset` |
+| `GET` | `/logs` | All recent logs. Params: `limit` (max 500), `offset` |
+| `GET` | `/stats` | Total log count, breakdown by vendor and device |
+
+### Chat
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/chat` | Send a message. Body: `{"message": "...", "session_id": "..."}` |
+| `DELETE` | `/chat` | Clear a session's history. Body: `{"session_id": "..."}` |
 
 ---
 
 ## Components
 
-### `services/parser.py` — Entry Point
+### `main.py` — Entry Point
 
-Starts three subsystems in one process:
-1. **UDP syslog listener** on `SYSLOG_HOST:SYSLOG_PORT` (default `0.0.0.0:514`)
-2. **Flask REST API** on `API_HOST:API_PORT` (default `0.0.0.0:5000`) in a daemon thread
-3. **Pipeline** (DB writer thread + agent batch timer)
-
-```powershell
-python -m backend.services.parser
-```
+Central launcher. Starts the pipeline, spins the Flask API in a daemon thread, then runs the syslog UDP socket on the main thread (so `Ctrl+C` shuts everything down cleanly).
 
 ### `services/normalizer.py` — Log Format Detection
 
@@ -161,34 +169,7 @@ Batch operations (`insert_logs_batch`, `upsert_devices_batch`) use `executemany`
 
 ---
 
-## Configuration
-
-All configuration is via `backend/.env`:
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `OPENAI_API_KEY` | — | **Required.** OpenAI API key |
-| `OPENAI_MODEL_PARSER` | `gpt-4.1` | Model for AI template generation (normalizer) |
-| `OPENAI_MODEL_AGENT` | `gpt-4.1` | Model for Tier-1 triage |
-| `OPENAI_MODEL_REASONING` | `gpt-5.1` | Model for Tier-2 deep analysis + chat |
-| `SYSLOG_HOST` | `0.0.0.0` | UDP listener bind address |
-| `SYSLOG_PORT` | `514` | UDP listener port |
-| `API_HOST` | `0.0.0.0` | REST API bind address |
-| `API_PORT` | `5000` | REST API port |
-
----
-
 ## Dependencies
-
-```
-pandas>=2.0          # DataFrame operations (log generator integration)
-pyarrow>=14.0        # Parquet file support
-numpy>=1.24          # Numerical operations
-openai>=1.0.0        # GPT-4.1 / GPT-5.1 API client
-python-dotenv>=1.0.0 # .env file loading
-flask>=3.0           # REST API framework
-flask-cors>=5.0      # Cross-origin support for frontend
-```
 
 Install:
 ```powershell
