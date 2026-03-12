@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent / "socrates.db"
@@ -48,26 +49,33 @@ def init_db() -> None:
             first_seen  TEXT    NOT NULL DEFAULT (datetime('now')),
             last_seen   TEXT    NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS alerts (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+            severity         TEXT    NOT NULL DEFAULT 'medium',
+            title            TEXT    NOT NULL,
+            summary          TEXT    NOT NULL,
+            analysis         TEXT    NOT NULL DEFAULT '',
+            mitigations      TEXT    NOT NULL DEFAULT '[]',
+            affected_devices TEXT    NOT NULL DEFAULT '[]',
+            related_logs     TEXT    NOT NULL DEFAULT '[]',
+            status           TEXT    NOT NULL DEFAULT 'open',
+            resolved_at      TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_logs_source_ip   ON logs(source_ip);
+        CREATE INDEX IF NOT EXISTS idx_logs_received_at ON logs(received_at);
+        CREATE INDEX IF NOT EXISTS idx_logs_vendor      ON logs(vendor);
+        CREATE INDEX IF NOT EXISTS idx_alerts_status    ON alerts(status);
+        CREATE INDEX IF NOT EXISTS idx_alerts_severity  ON alerts(severity);
     """)
     conn.commit()
     conn.close()
 
-# Logs
-def insert_log(received_at: str, source_ip: str, vendor: str, device_type: str, facility: int, severity: int, raw_message: str, parsed_fields: dict) -> int:
-    conn = get_connection()
-    cur = conn.execute(
-        """INSERT INTO logs
-           (received_at, source_ip, vendor, device_type, facility, severity, raw_message, parsed_fields)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (received_at, source_ip, vendor, device_type, facility, severity,
-         raw_message, json.dumps(parsed_fields)),
-    )
-    conn.commit()
-    row_id = cur.lastrowid
-    conn.close()
-    return row_id
-
+# ---------------------------------------------------------------------------
 # Templates
+# ---------------------------------------------------------------------------
 def load_templates() -> list[dict]:
     conn = get_connection()
     rows = conn.execute("SELECT * FROM templates").fetchall()
@@ -97,25 +105,8 @@ def save_template(fingerprint: str, vendor: str, device_type: str, parse_mode: s
     conn.commit()
     conn.close()
 
-# Devices
-def upsert_device(ip: str, hostname: str | None, vendor: str, device_type: str) -> None:
-    conn = get_connection()
-    conn.execute(
-        """INSERT INTO devices (ip, hostname, vendor, device_type)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(ip) DO UPDATE SET
-               hostname    = COALESCE(excluded.hostname, devices.hostname),
-               vendor      = excluded.vendor,
-               device_type = excluded.device_type,
-               last_seen   = datetime('now')""",
-        (ip, hostname, vendor, device_type),
-    )
-    conn.commit()
-    conn.close()
-
 # Batch operations — accept a caller-owned connection so the writer thread
 # can keep one connection open and avoid per-log open/close overhead.
-
 def insert_logs_batch(conn: sqlite3.Connection, logs: list[dict]) -> None:
     """Insert a batch of normalised log dicts using a single executemany call."""
     conn.executemany(
@@ -146,3 +137,150 @@ def upsert_devices_batch(conn: sqlite3.Connection, rows: list[tuple]) -> None:
         rows,
     )
     conn.commit()
+
+# ---------------------------------------------------------------------------
+# Alerts
+# ---------------------------------------------------------------------------
+def insert_alert(
+    severity: str,
+    title: str,
+    summary: str,
+    analysis: str = "",
+    mitigations: list | None = None,
+    affected_devices: list | None = None,
+    related_logs: list | None = None,
+) -> int:
+    conn = get_connection()
+    cur = conn.execute(
+        """INSERT INTO alerts
+           (severity, title, summary, analysis, mitigations, affected_devices, related_logs)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            severity, title, summary, analysis,
+            json.dumps(mitigations or []),
+            json.dumps(affected_devices or []),
+            json.dumps(related_logs or []),
+        ),
+    )
+    conn.commit()
+    alert_id = cur.lastrowid
+    conn.close()
+    return alert_id
+
+def find_duplicate_alert(title: str, window_seconds: int = 3600) -> bool:
+    """Return True if an open/acknowledged alert with the same title exists within the time window."""
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT id FROM alerts
+           WHERE title = ?
+             AND status IN ('open', 'acknowledged')
+             AND created_at >= datetime('now', ? || ' seconds')
+           LIMIT 1""",
+        (title, f"-{window_seconds}"),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+def get_alerts(
+    status: str | None = None,
+    severity: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    conn = get_connection()
+    sql = "SELECT * FROM alerts WHERE 1=1"
+    params: list = []
+    if status:
+        sql += " AND status = ?"
+        params.append(status)
+    if severity:
+        sql += " AND severity = ?"
+        params.append(severity)
+    sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    return [_row_to_alert(r) for r in rows]
+
+def get_alert(alert_id: int) -> dict | None:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM alerts WHERE id = ?", (alert_id,)).fetchone()
+    conn.close()
+    return _row_to_alert(row) if row else None
+
+def update_alert_status(alert_id: int, status: str) -> bool:
+    conn = get_connection()
+    resolved_at = datetime.now().isoformat() if status in ("resolved", "dismissed") else None
+    cur = conn.execute(
+        "UPDATE alerts SET status = ?, resolved_at = COALESCE(?, resolved_at) WHERE id = ?",
+        (status, resolved_at, alert_id),
+    )
+    conn.commit()
+    changed = cur.rowcount > 0
+    conn.close()
+    return changed
+
+def clear_alerts() -> int:
+    conn = get_connection()
+    cur = conn.execute("DELETE FROM alerts WHERE status IN ('resolved', 'dismissed')")
+    conn.commit()
+    count = cur.rowcount
+    conn.close()
+    return count
+
+def _row_to_alert(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "created_at": row["created_at"],
+        "severity": row["severity"],
+        "title": row["title"],
+        "summary": row["summary"],
+        "analysis": row["analysis"],
+        "mitigations": json.loads(row["mitigations"]),
+        "affected_devices": json.loads(row["affected_devices"]),
+        "related_logs": json.loads(row["related_logs"]),
+        "status": row["status"],
+        "resolved_at": row["resolved_at"],
+    }
+
+# ---------------------------------------------------------------------------
+# Query helpers
+# ---------------------------------------------------------------------------
+def get_devices_list() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM devices ORDER BY last_seen DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_recent_logs(limit: int = 100, offset: int = 0, source_ip: str | None = None) -> list[dict]:
+    conn = get_connection()
+    if source_ip:
+        rows = conn.execute(
+            "SELECT * FROM logs WHERE source_ip = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+            (source_ip, limit, offset),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM logs ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset)
+        ).fetchall()
+    conn.close()
+    return [
+        {**dict(r), "parsed_fields": json.loads(r["parsed_fields"])}
+        for r in rows
+    ]
+
+def get_log_stats() -> dict:
+    conn = get_connection()
+    total = conn.execute("SELECT COUNT(*) as cnt FROM logs").fetchone()["cnt"]
+    by_vendor = conn.execute(
+        "SELECT vendor, COUNT(*) as cnt FROM logs GROUP BY vendor ORDER BY cnt DESC"
+    ).fetchall()
+    by_device = conn.execute(
+        "SELECT source_ip, COUNT(*) as cnt FROM logs GROUP BY source_ip ORDER BY cnt DESC LIMIT 10"
+    ).fetchall()
+    conn.close()
+    return {
+        "total_logs": total,
+        "by_vendor": {r["vendor"]: r["cnt"] for r in by_vendor},
+        "by_device": {r["source_ip"]: r["cnt"] for r in by_device},
+    }

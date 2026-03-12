@@ -1,19 +1,13 @@
 import hashlib
 import json
-import os
 import re
 import time
-from pathlib import Path
 
-from dotenv import load_dotenv
-from openai import OpenAI
-
+from backend.config import OPENAI_CLIENT, OPENAI_MODEL_PARSER
 from backend.database.db import load_templates, save_template
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-_OPENAI_KEY: str | None = os.getenv("OPENAI_API_KEY")
-_OPENAI_MODEL: str = os.getenv("OPENAI_MODEL_PARSER", "gpt-4.1")
-_OPENAI_CLIENT: OpenAI | None = OpenAI(api_key=_OPENAI_KEY) if _OPENAI_KEY else None
+_OPENAI_CLIENT: object | None = OPENAI_CLIENT
+_OPENAI_MODEL: str = OPENAI_MODEL_PARSER
 
 _TEMPLATES: list[dict] = [
     {
