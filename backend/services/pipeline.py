@@ -21,14 +21,14 @@ _agent_timer: threading.Timer | None = None
 # DB writer settings
 # ---------------------------------------------------------------------------
 _DB_BATCH_SIZE = 50
-_DB_FLUSH_INTERVAL = 2.0  # seconds — short so logs hit the DB quickly
+_DB_FLUSH_INTERVAL = 2.0  # seconds
 
 # Work queue: the UDP receive loop enqueues normalised dicts here.
 # queue.Queue is thread-safe; no extra lock needed.
 _work_queue: queue.Queue = queue.Queue()
 
 # ---------------------------------------------------------------------------
-# Agent batch helpers (same logic as before)
+# Agent batch helpers
 # ---------------------------------------------------------------------------
 
 def _on_batch_ready(batch: list[dict]) -> None:
@@ -135,7 +135,7 @@ def process_log(source_ip: str, raw_syslog: str) -> dict:
     # Hand off to DB writer — non-blocking, returns in microseconds
     _work_queue.put(log_entry)
 
-    # Feed the agent queue (separate concern from DB writes)
+    # Feed the agent queue
     with _agent_lock:
         _agent_queue.append(log_entry)
         if len(_agent_queue) >= _AGENT_BATCH_SIZE:
