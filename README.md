@@ -24,31 +24,112 @@ data/
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL_PARSER=gpt-4.1
 OPENAI_MODEL_AGENT=gpt-4.1
+OPENAI_MODEL_REASONING=gpt-5.1
 SYSLOG_HOST=0.0.0.0
 SYSLOG_PORT=514
+API_HOST=0.0.0.0
+API_PORT=5000
 ```
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OPENAI_MODEL_PARSER` | `gpt-4.1` | Template generation for unknown log formats |
+| `OPENAI_MODEL_AGENT` | `gpt-4.1` | Tier-1 triage (fast batch scanning) |
+| `OPENAI_MODEL_REASONING` | `gpt-5.1` | Tier-2 deep analysis + interactive chat |
+| `API_HOST` / `API_PORT` | `0.0.0.0:5000` | REST API bind address |
 
 ---
 
 ## Running
 
-**Start the parser** (from project root):
+**Start the parser + API** (from project root):
 ```powershell
 python -m backend.services.parser
 ```
 
-Listens on UDP 514. On first run, creates `backend/database/socrates.db` automatically.
+This starts:
+- **UDP syslog listener** on port 514 (receives logs)
+- **REST API server** on port 5000 (dashboard + chat)
+- **DB** at `backend/database/socrates.db` (created automatically)
 
 **Simulate logs** (separate terminal, from project root):
 ```powershell
 python -m tools.Log_Stream_Generator `
   --parquet data\cic-collection.parquet `
-  --syslog --max-flows 10000 --speed 1
+  --syslog --max-flows 1000 --speed 1
 ```
 
 `--format` defaults to `fortigate`. Use `--format paloalto` for PaloAlto logs.
 
 Other output modes: `--output file.log` (file), `--endpoint http://...` (HTTP POST), `--serve` (REST API server). See [tools/Log_Stream_Generator/README.md](tools/Log_Stream_Generator/README.md) for full details.
+
+---
+
+## Architecture
+
+```
+┌───────────────────┐     UDP/514      ┌──────────────┐
+│  Log Stream       │ ───────────────> │   Parser     │
+│  Generator        │                  │  (syslog)    │
+│  (FortiGate/PA)   │                  └──────┬───────┘
+└───────────────────┘                         │
+                                              ▼
+                                     ┌────────────────┐
+                                     │   Normalizer   │
+                                     │  (templates /  │
+                                     │   AI regex)    │
+                                     └───────┬────────┘
+                                             │
+                              ┌──────────────┼──────────────┐
+                              ▼              ▼              ▼
+                      ┌──────────┐   ┌──────────────┐  ┌─────────┐
+                      │ DB Writer│   │ Agent Queue  │  │ Devices │
+                      │ (batch)  │   │ (100 / 5min) │  │ Tracker │
+                      └────┬─────┘   └──────┬───────┘  └─────────┘
+                           │                │
+                           ▼                ▼
+                      ┌─────────┐   ┌───────────────┐
+                      │ SQLite  │   │ Tier-1 Triage │
+                      │  (WAL)  │   │  (GPT-4.1)    │
+                      └─────────┘   └───────┬───────┘
+                                            │ threats?
+                                            ▼
+                                    ┌───────────────┐
+                                    │ Tier-2 Deep   │
+                                    │ Analysis      │
+                                    │  (GPT-5.1)    │
+                                    └───────┬───────┘
+                                            │
+                                            ▼
+                                    ┌───────────────┐     ┌──────────┐
+                                    │    Alerts     │ <── │ REST API │ <── User / Dashboard
+                                    │   Database    │ ──> │ :5000    │ ──> Chat (GPT-5.1)
+                                    └───────────────┘     └──────────┘
+```
+
+### Analysis Pipeline
+
+1. **Ingestion** — Logs arrive via UDP syslog, are normalized (built-in templates or AI-generated regex), and written to SQLite in batches.
+2. **Triage (GPT-4.1)** — Every 100 logs or 5 minutes, compact log summaries are sent to GPT-4.1 for fast threat detection.
+3. **Deep Analysis (GPT-5.1)** — If triage flags concerns, the flagged logs + historical alerts + device inventory are escalated to GPT-5.1 for detailed reasoning, correlation, and mitigation suggestions.
+4. **Alerts** — Results are stored as alerts with severity, analysis, and actionable mitigations (including device-specific CLI commands).
+5. **Chat** — Users can ask GPT-5.1 questions about their infrastructure in real-time, with full context of alerts, devices, and log statistics.
+
+---
+
+## REST API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/alerts` | List alerts (query: `?status=open&severity=critical&limit=50`) |
+| `GET` | `/api/alerts/<id>` | Get single alert with full analysis |
+| `PATCH` | `/api/alerts/<id>` | Update status: `{"status": "acknowledged\|resolved\|dismissed"}` |
+| `DELETE` | `/api/alerts` | Clear resolved/dismissed alerts |
+| `GET` | `/api/devices` | List all known devices |
+| `GET` | `/api/logs?limit=50` | Recent logs |
+| `GET` | `/api/stats` | Log ingestion statistics |
+| `POST` | `/api/chat` | Chat: `{"message": "...", "session_id": "..."}` |
+| `DELETE` | `/api/chat` | Clear chat session |
 
 ---
 
