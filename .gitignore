@@ -4,3 +4,8 @@
 .env
 *.db*
 __pycache__/
+
+# Frontend
+node_modules
+dist
+package-lock.json
