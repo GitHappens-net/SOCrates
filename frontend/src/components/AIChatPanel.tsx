@@ -2,239 +2,164 @@ import { useEffect, useRef, useState } from "react";
 import {
   BotMessageSquare,
   Send,
-  ShieldAlert,
-  Ban,
-  Search,
-  CheckCircle2,
-  History,
-  Zap,
+  Trash2,
 } from "lucide-react";
-import {
-  INITIAL_ACTION_HISTORY,
-  INITIAL_CHAT,
-  type ActionHistoryItem,
-  type ChatMessage,
-  type TextMessage,
-  type ThreatMessage,
-  type ThreatAction,
-  type ThreatInfo,
-} from "../data/mockData";
+import { sendChat, clearChat } from "../api/client";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 
-/* â”€â”€ Threat Action Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Types ────────────────────────────────────────────────────────── */
 
-interface ThreatCardProps {
-  threat: ThreatInfo;
-  onAction: (action: ThreatAction, threat: ThreatInfo) => void;
+interface ChatMsg {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
 }
 
-function ThreatCard({ threat, onAction }: ThreatCardProps) {
-  return (
-    <div className="my-2 rounded border border-red-600 bg-red-50 p-3">
-      <div className="mb-2 flex items-center gap-2">
-        <ShieldAlert className="h-4 w-4 text-red-600" />
-        <span className="text-xs font-bold uppercase tracking-wider text-red-700">
-          Threat Detected
-        </span>
-      </div>
-      <p className="mb-3 text-sm text-gray-900">{threat.description}</p>
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => onAction("block", threat)}
-          className="flex items-center gap-1.5 rounded border border-red-600 bg-red-50 px-3 py-1.5 text-[11px] font-semibold text-red-700 transition hover:bg-red-100"
-        >
-          <Ban className="h-3.5 w-3.5" /> Block IP
-        </button>
-        <button
-          onClick={() => onAction("investigate", threat)}
-          className="flex items-center gap-1.5 rounded border border-blue-600 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100"
-        >
-          <Search className="h-3.5 w-3.5" /> Investigate
-        </button>
-        <button
-          onClick={() => onAction("ignore", threat)}
-          className="flex items-center gap-1.5 rounded border border-gray-300 bg-gray-50 px-3 py-1.5 text-[11px] font-semibold text-gray-600 transition hover:bg-gray-100"
-        >
-          <CheckCircle2 className="h-3.5 w-3.5" /> Ignore
-        </button>
-      </div>
-    </div>
-  );
+function normalizeAssistantMarkdown(input: string): string {
+  // Handle double-escaped payloads coming from JSON strings.
+  let text = input
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t");
+
+  // If headers were escaped (\#), unescape them.
+  text = text.replace(/(^|\n)\\#/g, "$1#");
+
+  // Dedent common leading whitespace to avoid accidental code blocks.
+  const lines = text.split("\n");
+  const nonEmpty = lines.filter((l) => l.trim().length > 0);
+  const minIndent = nonEmpty.length
+    ? Math.min(...nonEmpty.map((l) => (l.match(/^\s*/)?.[0].length ?? 0)))
+    : 0;
+  if (minIndent > 0) {
+    text = lines.map((l) => l.slice(minIndent)).join("\n");
+  }
+
+  return text;
 }
 
-/* â”€â”€ Chat Bubble â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Chat Bubble ─────────────────────────────────────────────────── */
 
-function ChatBubble({ msg }: { msg: ChatMessage }) {
+function ChatBubble({ msg }: { msg: ChatMsg }) {
   const isUser = msg.role === "user";
+  const normalized = isUser ? msg.content : normalizeAssistantMarkdown(msg.content);
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
         className={`max-w-[85%] rounded-lg px-4 py-2.5 text-sm leading-relaxed ${
-          isUser
-            ? "bg-blue-600 text-white"
-            : "bg-gray-100 text-gray-900"
+          isUser ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-900"
         }`}
       >
-        {msg.type === "threat" ? (
-          <ThreatCard threat={msg.threat} onAction={msg.onAction} />
+        {isUser ? (
+          <p className="whitespace-pre-wrap">{normalized}</p>
         ) : (
-          <p className="whitespace-pre-wrap">{msg.content}</p>
+          <div className="chat-markdown">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkBreaks]}
+              components={{
+                h1: ({ children }) => <h1 className="text-[1.05rem] font-bold">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-[1rem] font-bold">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-[0.95rem] font-bold">{children}</h3>,
+                p: ({ children }) => <p className="my-2">{children}</p>,
+                ul: ({ children }) => <ul className="my-2 list-disc pl-5">{children}</ul>,
+                ol: ({ children }) => <ol className="my-2 list-decimal pl-5">{children}</ol>,
+                li: ({ children }) => <li className="my-1">{children}</li>,
+                pre: ({ children }) => (
+                  <pre className="my-2 overflow-x-auto rounded bg-gray-900 p-3 text-gray-100">{children}</pre>
+                ),
+                code: ({ children, className }) => (
+                  <code className={`text-[12px] ${className ?? ""}`}>{children}</code>
+                ),
+              }}
+            >
+              {normalized}
+            </ReactMarkdown>
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-/* â”€â”€ Typing Indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Thinking Indicator ──────────────────────────────────────────── */
 
-function TypingDots() {
+function ThinkingIndicator() {
   return (
     <div className="flex justify-start">
-      <div className="rounded-lg bg-gray-100 px-4 py-3 text-gray-500 dot-blink">
-        <span>â—</span> <span>â—</span> <span>â—</span>
+      <div className="flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-3">
+        <div className="flex gap-1">
+          <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: "0ms" }} />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: "150ms" }} />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400" style={{ animationDelay: "300ms" }} />
+        </div>
+        <span className="text-xs text-gray-500">Thinking...</span>
       </div>
     </div>
   );
 }
 
-/* â”€â”€ Main AI Chat Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
-const AI_RESPONSES: string[] = [
-  "I've analysed the traffic pattern. The spike from 185.220.101.1 correlates with a known Tor exit node. Recommend blocking.",
-  "Port 8080 has been rate-limited. I'm monitoring for further anomalies on that vector.",
-  "The DDoS signature matches Mirai botnet variant. I've already triggered an incident report (INC-20260307-002).",
-  "Current traffic from Germany: 847 flows in the last hour. 12 flagged as suspicious â€” mostly TLS probes on non-standard ports.",
-  "False positive confirmed. The traffic spike was from a scheduled backup job. I've updated the baseline.",
-  "All east-zone firewalls are responding. No configuration drift detected.",
-];
-
-const THREAT_POOL: Omit<ThreatInfo, "id">[] = [
-  { description: "DoS Attack detected from 45.33.32.156 â€” 50k SYN packets/sec targeting port 443.", ip: "45.33.32.156" },
-  { description: "Brute Force SSH attempt from 91.198.174.192 â€” 312 failed logins in 5 minutes.",   ip: "91.198.174.192" },
-  { description: "SQL Injection probe from 203.0.113.42 â€” malicious payload detected in query string.", ip: "203.0.113.42" },
-];
+/* ── Main AI Chat Panel ──────────────────────────────────────────── */
 
 export default function AIChatPanel() {
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_CHAT);
+  const [messages, setMessages] = useState<ChatMsg[]>([
+    {
+      id: 1,
+      role: "assistant",
+      content:
+        "SOCrates AI Agent online. I have access to the full log and alert database. Ask me anything about your network security.",
+    },
+  ]);
   const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [actionHistory, setActionHistory] = useState<ActionHistoryItem[]>(INITIAL_ACTION_HISTORY);
-  const [showHistory, setShowHistory] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  /* Auto-scroll to bottom */
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isTyping]);
-
-  useEffect(() => {
-    const iv = setInterval(() => {
-      const base = THREAT_POOL[Math.floor(Math.random() * THREAT_POOL.length)];
-      const threat: ThreatInfo = { id: Date.now(), ...base };
-      const msg: ThreatMessage = {
-        id: threat.id,
-        role: "assistant",
-        type: "threat",
-        content: "",
-        threat,
-        onAction: handleThreatAction,
-      };
-      setMessages((prev) => [...prev, msg]);
-    }, 20_000);
-    return () => clearInterval(iv);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function handleThreatAction(action: ThreatAction, threat: ThreatInfo): void {
-    const actionText =
-      action === "block"
-        ? `Blocked IP ${threat.ip}`
-        : action === "investigate"
-        ? `Investigating traffic from ${threat.ip}`
-        : `Ignored threat from ${threat.ip}`;
-
-    setActionHistory((prev) => [
-      {
-        id: Date.now(),
-        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-        action: actionText,
-        context: threat.description.slice(0, 60) + "â€¦",
-      },
-      ...prev,
-    ]);
-
-    const reply: TextMessage = {
-      id: Date.now(),
-      role: "assistant",
-      type: "text",
-      content: `âœ… Action taken: ${actionText}`,
-    };
-    setMessages((prev) => [...prev, reply]);
-  }
+  }, [messages, isThinking]);
 
   async function handleSend(): Promise<void> {
     const text = input.trim();
-    if (!text) return;
+    if (!text || isThinking) return;
 
-    const userMsg: TextMessage = { id: Date.now(), role: "user", type: "text", content: text };
+    const userMsg: ChatMsg = { id: Date.now(), role: "user", content: text };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
-    setIsTyping(true);
+    setIsThinking(true);
 
     try {
-      const res = await fetch("/api/v1/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
-      });
-
-      if (res.ok && res.headers.get("content-type")?.includes("text/event-stream")) {
-        const reader = res.body!.getReader();
-        const decoder = new TextDecoder();
-        let aiText = "";
-        const aiId = Date.now() + 1;
-
-        const streamMsg: TextMessage = { id: aiId, role: "assistant", type: "text", content: "" };
-        setMessages((prev) => [...prev, streamMsg]);
-        setIsTyping(false);
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value);
-          const lines = chunk.split("\n").filter((l) => l.startsWith("data: "));
-          for (const line of lines) {
-            const payload = line.slice(6);
-            if (payload === "[DONE]") break;
-            try {
-              const parsed = JSON.parse(payload) as { content?: string };
-              aiText += parsed.content ?? "";
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === aiId ? ({ ...m, content: aiText } as TextMessage) : m
-                )
-              );
-            } catch {
-              // ignore malformed SSE frames
-            }
-          }
-        }
-        return;
-      }
-    } catch {
-      // Backend unreachable â€” fall back to mock
-    }
-
-    setTimeout(() => {
-      setIsTyping(false);
-      const reply: TextMessage = {
+      const resp = await sendChat(text);
+      const aiMsg: ChatMsg = {
         id: Date.now() + 1,
         role: "assistant",
-        type: "text",
-        content: AI_RESPONSES[Math.floor(Math.random() * AI_RESPONSES.length)],
+        content: resp.reply,
       };
-      setMessages((prev) => [...prev, reply]);
-    }, 1200 + Math.random() * 1000);
+      setMessages((prev) => [...prev, aiMsg]);
+    } catch {
+      const errMsg: ChatMsg = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: "Sorry, I couldn't reach the backend. Make sure the server is running.",
+      };
+      setMessages((prev) => [...prev, errMsg]);
+    } finally {
+      setIsThinking(false);
+    }
+  }
+
+  async function handleClear(): Promise<void> {
+    try { await clearChat(); } catch { /* ignore */ }
+    setMessages([
+      {
+        id: Date.now(),
+        role: "assistant",
+        content: "Chat cleared. How can I help?",
+      },
+    ]);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
@@ -245,7 +170,7 @@ export default function AIChatPanel() {
   }
 
   return (
-    <div className="bg-white border border-black flex h-full flex-col rounded-lg">
+    <div className="flex h-full flex-col rounded-lg border border-black bg-white">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-black px-4 py-3">
         <div className="flex items-center gap-2">
@@ -253,72 +178,46 @@ export default function AIChatPanel() {
             <BotMessageSquare className="h-4 w-4 text-black" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-black">Sentinel AI Agent</p>
-            <p className="text-[10px] text-green-600">Online â€¢ Monitoring</p>
+            <p className="text-sm font-semibold text-black">SOCrates AI</p>
+            <p className="text-[10px] text-green-600">Online</p>
           </div>
         </div>
         <button
-          onClick={() => setShowHistory(!showHistory)}
-          title="Action History"
-          className={`flex h-8 w-8 items-center justify-center rounded border transition ${
-            showHistory
-              ? "border-black bg-black text-white"
-              : "border-gray-300 text-gray-500 hover:border-black hover:text-black"
-          }`}
+          onClick={handleClear}
+          title="Clear chat"
+          className="flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-gray-500 transition hover:border-black hover:text-black"
         >
-          <History className="h-4 w-4" />
+          <Trash2 className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Action History Panel */}
-      {showHistory && (
-        <div className="max-h-[200px] overflow-y-auto border-b border-gray-200 bg-gray-50 px-4 py-3">
-          <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-            <Zap className="h-3 w-3 text-blue-600" /> Autonomous Action Log
-          </p>
-          <div className="space-y-2">
-            {actionHistory.map((a) => (
-              <div key={a.id} className="rounded border border-gray-200 bg-white px-3 py-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-blue-700">{a.action}</span>
-                  <span className="font-mono text-gray-500">{a.time}</span>
-                </div>
-                <p className="mt-0.5 text-gray-500">{a.context}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
+      {/* Messages — min-h-0 + flex-1 + overflow-y-auto fixes the scroll bug */}
+      <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {messages.map((msg) => (
           <ChatBubble key={msg.id} msg={msg} />
         ))}
-        {isTyping && <TypingDots />}
+        {isThinking && <ThinkingIndicator />}
       </div>
 
       {/* Input */}
-      <div className="border-t border-black p-3">
-        <div className="flex items-center gap-2 rounded border border-gray-300 bg-gray-50 px-3 py-2 focus-within:border-black transition">
+      <div className="border-t border-gray-200 px-4 py-3">
+        <div className="flex items-center gap-2">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask Sentinel or run a commandâ€¦"
-            className="flex-1 bg-transparent text-sm text-gray-900 placeholder-gray-400 outline-none"
+            placeholder="Ask about your network..."
+            disabled={isThinking}
+            className="flex-1 rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 outline-none transition focus:border-black disabled:opacity-50"
           />
           <button
             onClick={() => void handleSend()}
-            disabled={!input.trim()}
-            className="flex h-8 w-8 items-center justify-center rounded bg-black text-white transition hover:bg-gray-800 disabled:opacity-30"
+            disabled={!input.trim() || isThinking}
+            className="flex h-10 w-10 items-center justify-center rounded-lg bg-black text-white transition hover:bg-gray-800 disabled:opacity-30"
           >
             <Send className="h-4 w-4" />
           </button>
         </div>
-        <p className="mt-1.5 px-1 text-[10px] text-gray-400">
-          Try: "Why did you block that IP?" Â· "Show traffic from Germany" Â· "Close port 8080"
-        </p>
       </div>
     </div>
   );

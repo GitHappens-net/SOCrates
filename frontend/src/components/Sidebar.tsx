@@ -1,7 +1,7 @@
-import { LayoutDashboard, MonitorDot, Network, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, MonitorDot, Network, History, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export type ViewId = "dashboard" | "logs" | "topology" | "ai";
+export type ViewId = "dashboard" | "devices" | "logs" | "history";
 
 interface NavItem {
   id: ViewId;
@@ -15,14 +15,15 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: "dashboard", icon: LayoutDashboard, label: "Dashboard"        },
-  { id: "logs",      icon: MonitorDot,      label: "Live Log Stream"  },
-  { id: "topology",  icon: Network,         label: "Network Topology" },
+  { id: "dashboard", icon: LayoutDashboard, label: "Dashboard"      },
+  { id: "devices",   icon: Network,         label: "Devices"        },
+  { id: "logs",      icon: MonitorDot,      label: "Logs"           },
+  { id: "history",   icon: History,         label: "Analysis History"},
 ];
 
 export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 flex w-[72px] flex-col items-center gap-2 border-r border-black bg-white py-5">
+    <aside className="fixed inset-y-0 left-0 z-40 flex w-[72px] flex-col items-center gap-2 border-r border-gray-200 bg-white py-5">
       {/* Logo */}
       <div className="mb-6 flex h-10 w-10 items-center justify-center rounded-lg border border-black">
         <ShieldCheck className="h-6 w-6 text-black" />

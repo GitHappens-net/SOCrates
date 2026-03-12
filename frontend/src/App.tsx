@@ -1,71 +1,84 @@
 import { useState } from "react";
 import Sidebar, { type ViewId } from "./components/Sidebar";
 import Header from "./components/Header";
-import MetricCards from "./components/MetricCards";
-import TrafficChart from "./components/TrafficChart";
-import ThreatDonut from "./components/ThreatDonut";
-import LiveLogMonitor from "./components/LiveLogMonitor";
+import DashboardView from "./components/DashboardView";
+import DevicesView from "./components/DevicesView";
+import LogsView from "./components/LogsView";
+import HistoryView from "./components/HistoryView";
 import AIChatPanel from "./components/AIChatPanel";
-import useSimulatedData from "./hooks/useSimulatedData";
-import { Network } from "lucide-react";
+import { DataProvider } from "./context/DataContext";
 
-export default function App() {
+function AppContent() {
   const [activeView, setActiveView] = useState<ViewId>("dashboard");
-  const { logs, trafficData, sparklines, metrics } = useSimulatedData();
+  const [chatWidth, setChatWidth] = useState(420);
+
+  function handleDragStart(e: React.PointerEvent<HTMLDivElement>): void {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = chatWidth;
+
+    const onMove = (ev: PointerEvent) => {
+      const delta = startX - ev.clientX;
+      const next = Math.max(320, Math.min(700, startWidth + delta));
+      setChatWidth(next);
+    };
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
 
   return (
-    <div className="flex min-h-screen">
-      {/* Sidebar */}
+    <div className="flex h-screen overflow-hidden">
       <Sidebar activeView={activeView} onNavigate={setActiveView} />
 
-      {/* Main content area */}
-      <div className="bg-gray-50 ml-[72px] flex flex-1 flex-col">
-        {/* Header */}
+      <div className="ml-[72px] flex flex-1 flex-col overflow-hidden">
         <div className="px-5 pt-4">
           <Header />
         </div>
 
-        {/* Body */}
-        <div className="flex flex-1 gap-4 overflow-hidden px-5 py-4">
-          {/* Left column — dashboard / logs */}
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto pr-1">
-            {(activeView === "dashboard" || activeView === "ai") && (
-              <>
-                <MetricCards metrics={metrics} sparklines={sparklines} />
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                  <div className="xl:col-span-2">
-                    <TrafficChart data={trafficData} />
-                  </div>
-                  <ThreatDonut />
-                </div>
-              </>
-            )}
-
-            {(activeView === "dashboard" || activeView === "logs") && (
-              <LiveLogMonitor logs={logs} />
-            )}
-
-            {activeView === "topology" && (
-              <div className="bg-white border border-black flex flex-1 flex-col items-center justify-center rounded-lg p-10">
-                <Network className="mb-4 h-16 w-16 text-gray-300" />
-                <h2 className="text-lg font-semibold text-gray-500">
-                  Network Topology
-                </h2>
-                <p className="mt-2 max-w-md text-center text-sm text-gray-500">
-                  Interactive topology map will render here. Connect to a live
-                  data source to visualise network segments, subnets, and
-                  real-time traffic flows between nodes.
-                </p>
-              </div>
-            )}
+        <div className="flex min-h-0 flex-1 gap-4 px-5 py-4">
+          {/* Main panel */}
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            {activeView === "dashboard" && <DashboardView />}
+            {activeView === "devices" && <DevicesView />}
+            {activeView === "logs" && <LogsView />}
+            {activeView === "history" && <HistoryView />}
           </div>
 
-          {/* Right column — AI Chat Panel (always visible) */}
-          <div className="hidden w-[380px] shrink-0 lg:block xl:w-[420px]">
+          {/* AI Chat sidebar */}
+          <div
+            onPointerDown={handleDragStart}
+            className="hidden w-3 shrink-0 cursor-col-resize rounded bg-gray-100 transition hover:bg-gray-300 lg:block"
+            title="Drag to resize chat"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize chat panel"
+          />
+          <div
+            className="hidden shrink-0 lg:flex"
+            style={{ width: `${chatWidth}px` }}
+          >
             <AIChatPanel />
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <DataProvider>
+      <AppContent />
+    </DataProvider>
   );
 }
