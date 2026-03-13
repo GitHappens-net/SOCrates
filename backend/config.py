@@ -29,12 +29,12 @@ FORTIGATE_API_TOKEN: str | None = os.getenv("FORTIGATE_API_TOKEN")
 FORTIGATE_TOKENS_JSON: dict[str, str] = {}
 _TOKENS_RAW = os.getenv("FORTIGATE_TOKENS_JSON", "")
 if _TOKENS_RAW:
-	try:
-		parsed = json.loads(_TOKENS_RAW)
-		if isinstance(parsed, dict):
-			FORTIGATE_TOKENS_JSON = {str(k): str(v) for k, v in parsed.items()}
-	except json.JSONDecodeError:
-		FORTIGATE_TOKENS_JSON = {}
+    try:
+        parsed = json.loads(_TOKENS_RAW)
+        if isinstance(parsed, dict):
+            FORTIGATE_TOKENS_JSON = {str(k): str(v) for k, v in parsed.items()}
+    except json.JSONDecodeError:
+        FORTIGATE_TOKENS_JSON = {}
 
 FORTIGATE_VERIFY_SSL: bool = os.getenv("FORTIGATE_VERIFY_SSL", "false").lower() in ("1", "true", "yes")
 FORTIGATE_TIMEOUT_SECONDS: int = int(os.getenv("FORTIGATE_TIMEOUT_SECONDS", "10"))
