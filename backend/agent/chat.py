@@ -258,7 +258,12 @@ def _fill_pending_from_message(pending: dict, message: str) -> dict:
 
     ips = _IP_RE.findall(message)
     if pending.get("type") == "close_port":
-        m_port = re.search(r"\b(\d{1,5})\b", text)
+        # Prefer an explicit "port 22" style pattern, case-insensitive.
+        m_port = re.search(r"\bport(?:s)?\s+(\d{1,5})\b", text)
+        # If no explicit port is provided and there are no IPs in the message,
+        # fall back to any standalone number, as in the original behavior.
+        if not m_port and not ips:
+            m_port = re.search(r"\b(\d{1,5})\b", text)
         if m_port:
             out["port"] = int(m_port.group(1))
         m_proto = re.search(r"\b(tcp|udp|both)\b", text)
