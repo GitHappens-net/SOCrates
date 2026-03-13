@@ -102,6 +102,9 @@ def execute_soar():
     requested_by = str(body.get("requested_by", "api"))
     source = str(body.get("source", "manual"))
 
+    if not isinstance(parameters, dict):
+        return jsonify({"error": "parameters must be an object"}), 400
+
     if not device_ip:
         return jsonify({"error": "device_ip is required"}), 400
     if not action_type:
