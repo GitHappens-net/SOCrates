@@ -45,10 +45,49 @@ _SEVERITY_RANK = {
 }
 
 
+def _normalize_device_host(device_ip: str) -> str:
+    """
+    Normalize a device identifier that may include a port into a host key suitable
+    for use with FORTIGATE_TOKENS_JSON.
+
+    Handles:
+    - Plain IPv4/IPv6 addresses (returned as-is).
+    - Bracketed IPv6 with optional port, e.g. "[2001:db8::1]:8443".
+    - host:port / IPv4:port forms, e.g. "10.0.0.1:8443".
+    """
+    device_ip = device_ip.strip()
+    if not device_ip:
+        return device_ip
+
+    # Bracketed IPv6 with optional port, e.g. "[2001:db8::1]:8443"
+    if device_ip[0] == "[":
+        end = device_ip.find("]")
+        if end != -1:
+            host = device_ip[1:end]
+            return host
+
+    # Plain IP address (IPv4 or IPv6) without port.
+    try:
+        ipaddress.ip_address(device_ip)
+        return device_ip
+    except ValueError:
+        pass
+
+    # Fallback: treat as host:port if the last component is numeric.
+    if ":" in device_ip:
+        host, port = device_ip.rsplit(":", 1)
+        if port.isdigit():
+            return host
+
+    # Return original string if no normalization rules applied.
+    return device_ip
+
+
 def _token_for_device(device_ip: str) -> str | None:
     # Per-device token has priority over global token.
-    if device_ip in FORTIGATE_TOKENS_JSON:
-        return FORTIGATE_TOKENS_JSON[device_ip]
+    host_key = _normalize_device_host(device_ip)
+    if host_key in FORTIGATE_TOKENS_JSON:
+        return FORTIGATE_TOKENS_JSON[host_key]
     return FORTIGATE_API_TOKEN
 
 
