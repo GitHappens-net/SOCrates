@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 import re
 import threading
 from datetime import datetime
 
-from config import OPENAI_CLIENT, OPENAI_MODEL_REASONING
+from config import (
+    OPENAI_CLIENT,
+    OPENAI_MODEL_REASONING,
+)
 from database.db import get_alerts, get_alerts_since, get_devices_list, get_log_stats
 from services.soar import execute_soar_action
 
@@ -147,9 +151,9 @@ def _build_recent_threats_reply(minutes: int) -> str:
 
     return "\n".join(lines)
 
-
 _IP_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
-
+_SOAR_CONFIRM_PREFIX = "SOAR_CONFIRM::"
+_SOAR_RESULT_PREFIX = "SOAR_RESULT::"
 
 def _extract_soar_intent(message: str) -> dict | None:
     text = message.lower().strip()
@@ -187,7 +191,6 @@ def _extract_soar_intent(message: str) -> dict | None:
 
     return None
 
-
 def _extract_partial_soar_intent(message: str) -> dict | None:
     text = message.lower().strip()
 
@@ -213,7 +216,6 @@ def _extract_partial_soar_intent(message: str) -> dict | None:
 
     return None
 
-
 def _infer_device_from_history(history: list[dict]) -> str | None:
     """Infer likely Fortinet device IP from recent conversation context."""
     devices = get_devices_list()
@@ -238,14 +240,12 @@ def _infer_device_from_history(history: list[dict]) -> str | None:
             return str(d.get("ip"))
     return None
 
-
 def _default_fortigate_device_ip() -> str | None:
     devices = get_devices_list()
     for d in devices:
         if str(d.get("vendor", "")).lower() == "fortinet":
             return d.get("ip")
     return None
-
 
 def _fill_pending_from_message(pending: dict, message: str) -> dict:
     out = dict(pending)
@@ -283,14 +283,12 @@ def _fill_pending_from_message(pending: dict, message: str) -> dict:
 
     return out
 
-
 def _missing_fields(intent: dict) -> list[str]:
     if intent.get("type") == "close_port":
         return ["port"] if not intent.get("port") else []
     if intent.get("type") == "block_ip":
         return ["target_ip"] if not intent.get("target_ip") else []
     return []
-
 
 def _followup_prompt(intent: dict, history: list[dict]) -> str:
     miss = _missing_fields(intent)
@@ -311,12 +309,48 @@ def _followup_prompt(intent: dict, history: list[dict]) -> str:
 
     return "Please provide the missing action details."
 
+def _persist_turn(session_id: str, user: str, assistant: str) -> None:
+    with _lock:
+        history = _sessions.setdefault(session_id, [])
+        history.append({"role": "user", "content": user})
+        history.append({"role": "assistant", "content": assistant})
+        if len(history) > _MAX_HISTORY:
+            history[:] = history[-_MAX_HISTORY:]
 
-def _handle_soar_intent(intent: dict, session_id: str, message: str, history: list[dict]) -> str:
-    device_ip = intent.get("device_ip") or _infer_device_from_history(history) or _default_fortigate_device_ip()
-    if not device_ip:
-        return "No Fortinet device is available in inventory to execute this action."
+def _is_confirm(text: str) -> bool:
+    t = text.strip().lower()
+    return bool(re.match(r"^(confirm|yes|y|approve|execute|run|go\s+ahead)\b", t))
 
+def _is_cancel(text: str) -> bool:
+    t = text.strip().lower()
+    return bool(re.match(r"^(cancel|no|n|stop|abort|never\s*mind)\b", t))
+
+def _soar_confirm_message(intent: dict, device_ip: str) -> str:
+    payload = {
+        "title": "SOAR Action Confirmation",
+        "mode": "live",
+        "device_ip": device_ip,
+        "action_type": intent.get("type"),
+        "parameters": {
+            "port": intent.get("port"),
+            "protocol": intent.get("protocol"),
+            "target_ip": intent.get("target_ip"),
+        },
+        "confirm_hint": "Reply 'confirm' to proceed or 'cancel' to abort.",
+    }
+    return _SOAR_CONFIRM_PREFIX + json.dumps(payload)
+
+def _soar_result_message(*, ok: bool, action_id: int, status: str, summary: str, details: str | None = None) -> str:
+    payload = {
+        "ok": ok,
+        "action_id": action_id,
+        "status": status,
+        "summary": summary,
+        "details": details,
+    }
+    return _SOAR_RESULT_PREFIX + json.dumps(payload)
+
+def _execute_soar_intent(intent: dict, device_ip: str) -> str:
     if intent["type"] == "close_port":
         res = execute_soar_action(
             device_ip=device_ip,
@@ -327,36 +361,69 @@ def _handle_soar_intent(intent: dict, session_id: str, message: str, history: li
             },
             requested_by="chat",
             source="chat",
-            dry_run=False,
         )
-        reply = (
-            f"SOAR action {'succeeded' if res.ok else 'failed'}: close_port on {device_ip}.\n"
-            f"action_id={res.action_id} status={res.status}.\n"
-            f"{res.summary}"
+        details = None
+        if res.error and "Missing FortiGate API token" in res.error:
+            details = "Set FORTIGATE_API_TOKEN or FORTIGATE_TOKENS_JSON in backend/.env."
+        return _soar_result_message(
+            ok=res.ok,
+            action_id=res.action_id,
+            status=res.status,
+            summary=(
+                f"close_port on {device_ip}"
+                if res.ok
+                else f"Failed close_port on {device_ip}"
+            ),
+            details=details or res.summary,
         )
-    elif intent["type"] == "block_ip":
+
+    if intent["type"] == "block_ip":
         res = execute_soar_action(
             device_ip=device_ip,
             action_type="block_ip",
             parameters={"target_ip": intent["target_ip"]},
             requested_by="chat",
             source="chat",
-            dry_run=False,
         )
-        reply = (
-            f"SOAR action {'succeeded' if res.ok else 'failed'}: block_ip {intent['target_ip']} on {device_ip}.\n"
-            f"action_id={res.action_id} status={res.status}.\n"
-            f"{res.summary}"
+        details = None
+        if res.error and "Missing FortiGate API token" in res.error:
+            details = "Set FORTIGATE_API_TOKEN or FORTIGATE_TOKENS_JSON in backend/.env."
+        return _soar_result_message(
+            ok=res.ok,
+            action_id=res.action_id,
+            status=res.status,
+            summary=(
+                f"block_ip {intent['target_ip']} on {device_ip}"
+                if res.ok
+                else f"Failed block_ip {intent['target_ip']} on {device_ip}"
+            ),
+            details=details or res.summary,
         )
-    else:
-        reply = "Unsupported SOAR intent."
 
+    return _soar_result_message(ok=False, action_id=0, status="failed", summary="Unsupported SOAR intent")
+
+def _handle_soar_intent(intent: dict, session_id: str, message: str, history: list[dict]) -> str:
+    device_ip = intent.get("device_ip") or _infer_device_from_history(history) or _default_fortigate_device_ip()
+    if not device_ip:
+        reply = _soar_result_message(
+            ok=False,
+            action_id=0,
+            status="failed",
+            summary="No Fortinet device is available in inventory to execute this action.",
+        )
+        _persist_turn(session_id, message, reply)
+        return reply
+
+    # Always require explicit confirmation before executing chat-triggered SOAR.
+    staged = {
+        **intent,
+        "device_ip": device_ip,
+        "awaiting_confirmation": True,
+    }
     with _lock:
-        history = _sessions.setdefault(session_id, [])
-        history.append({"role": "user", "content": message})
-        history.append({"role": "assistant", "content": reply})
-        if len(history) > _MAX_HISTORY:
-            history[:] = history[-_MAX_HISTORY:]
+        _pending_soar[session_id] = staged
+    reply = _soar_confirm_message(staged, device_ip=device_ip)
+    _persist_turn(session_id, message, reply)
     return reply
 
 def chat(message: str, session_id: str = "default") -> str:
@@ -378,19 +445,56 @@ def chat(message: str, session_id: str = "default") -> str:
         history_snapshot = list(_sessions.setdefault(session_id, []))
         pending = _pending_soar.get(session_id)
 
-    # Continue an existing follow-up flow.
+    # Continue an existing follow-up/confirmation flow.
     if pending is not None:
+        if pending.get("awaiting_confirmation"):
+            if _is_cancel(message):
+                with _lock:
+                    _pending_soar.pop(session_id, None)
+                reply = _soar_result_message(
+                    ok=False,
+                    action_id=0,
+                    status="cancelled",
+                    summary="Cancelled the pending SOAR action.",
+                )
+                _persist_turn(session_id, message, reply)
+                return reply
+
+            if not _is_confirm(message):
+                reply = _soar_confirm_message(
+                    pending,
+                    device_ip=pending.get("device_ip"),
+                )
+                _persist_turn(session_id, message, reply)
+                return reply
+
+            with _lock:
+                staged = _pending_soar.pop(session_id, None)
+            if not staged:
+                reply = _soar_result_message(
+                    ok=False,
+                    action_id=0,
+                    status="failed",
+                    summary="No pending SOAR action to confirm.",
+                )
+                _persist_turn(session_id, message, reply)
+                return reply
+
+            reply = _execute_soar_intent(staged, staged["device_ip"])
+            _persist_turn(session_id, message, reply)
+            return reply
+
         filled = _fill_pending_from_message(pending, message)
         if filled.get("cancelled"):
             with _lock:
                 _pending_soar.pop(session_id, None)
-            reply = "Cancelled the pending SOAR action."
-            with _lock:
-                history = _sessions.setdefault(session_id, [])
-                history.append({"role": "user", "content": message})
-                history.append({"role": "assistant", "content": reply})
-                if len(history) > _MAX_HISTORY:
-                    history[:] = history[-_MAX_HISTORY:]
+            reply = _soar_result_message(
+                ok=False,
+                action_id=0,
+                status="cancelled",
+                summary="Cancelled the pending SOAR action.",
+            )
+            _persist_turn(session_id, message, reply)
             return reply
 
         # Auto-fill device from context if still missing.
@@ -401,12 +505,7 @@ def chat(message: str, session_id: str = "default") -> str:
             with _lock:
                 _pending_soar[session_id] = filled
             reply = _followup_prompt(filled, history_snapshot)
-            with _lock:
-                history = _sessions.setdefault(session_id, [])
-                history.append({"role": "user", "content": message})
-                history.append({"role": "assistant", "content": reply})
-                if len(history) > _MAX_HISTORY:
-                    history[:] = history[-_MAX_HISTORY:]
+            _persist_turn(session_id, message, reply)
             return reply
 
         with _lock:
@@ -427,12 +526,7 @@ def chat(message: str, session_id: str = "default") -> str:
         with _lock:
             _pending_soar[session_id] = partial
         reply = _followup_prompt(partial, history_snapshot)
-        with _lock:
-            history = _sessions.setdefault(session_id, [])
-            history.append({"role": "user", "content": message})
-            history.append({"role": "assistant", "content": reply})
-            if len(history) > _MAX_HISTORY:
-                history[:] = history[-_MAX_HISTORY:]
+        _persist_turn(session_id, message, reply)
         return reply
 
     with _lock:

@@ -1,30 +1,21 @@
 from __future__ import annotations
-
 import ipaddress
 from dataclasses import dataclass
-
 import requests
 
 from config import (
     FORTIGATE_API_TOKEN,
-    SOAR_AUTO_RESPONSE_DRY_RUN,
     SOAR_AUTO_RESPONSE_ENABLED,
     SOAR_AUTO_RESPONSE_MIN_SEVERITY,
     FORTIGATE_TOKENS_JSON,
     FORTIGATE_TIMEOUT_SECONDS,
     FORTIGATE_VERIFY_SSL,
 )
-from database.db import (
-    create_soar_action,
-    get_device,
-    get_fortigate_devices,
-    update_soar_action_result,
-)
 
+from database.db import create_soar_action, get_device, get_fortigate_devices, update_soar_action_result
 
 class SoarError(Exception):
     pass
-
 
 @dataclass
 class ActionResult:
@@ -35,7 +26,6 @@ class ActionResult:
     result: dict | None = None
     error: str | None = None
 
-
 _SEVERITY_RANK = {
     "info": 0,
     "low": 1,
@@ -44,17 +34,7 @@ _SEVERITY_RANK = {
     "critical": 4,
 }
 
-
 def _normalize_device_host(device_ip: str) -> str:
-    """
-    Normalize a device identifier that may include a port into a host key suitable
-    for use with FORTIGATE_TOKENS_JSON.
-
-    Handles:
-    - Plain IPv4/IPv6 addresses (returned as-is).
-    - Bracketed IPv6 with optional port, e.g. "[2001:db8::1]:8443".
-    - host:port / IPv4:port forms, e.g. "10.0.0.1:8443".
-    """
     device_ip = device_ip.strip()
     if not device_ip:
         return device_ip
@@ -82,7 +62,6 @@ def _normalize_device_host(device_ip: str) -> str:
     # Return original string if no normalization rules applied.
     return device_ip
 
-
 def _token_for_device(device_ip: str) -> str | None:
     # Per-device token has priority over global token.
     host_key = _normalize_device_host(device_ip)
@@ -90,24 +69,25 @@ def _token_for_device(device_ip: str) -> str | None:
         return FORTIGATE_TOKENS_JSON[host_key]
     return FORTIGATE_API_TOKEN
 
+def _is_localhost_device(device_ip: str) -> bool:
+    host = _normalize_device_host(device_ip).strip().lower()
+    return host in ("127.0.0.1", "localhost", "::1")
 
 def _fortigate_base(device_ip: str) -> str:
     # device_ip can also include port (e.g. 10.0.0.1:8443)
     return f"https://{device_ip}"
 
-
 def _fortigate_request(
     device_ip: str,
-    token: str,
+    token: str | None,
     method: str,
     path: str,
     payload: dict | None = None,
 ) -> dict:
     url = _fortigate_base(device_ip) + path
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     resp = requests.request(
         method=method,
         url=url,
@@ -125,21 +105,17 @@ def _fortigate_request(
         raise SoarError(f"FortiGate API {resp.status_code}: {body}")
     return body
 
-
 def _validate_ip(ip: str) -> None:
     try:
         ipaddress.ip_address(ip)
     except ValueError as exc:
         raise SoarError(f"Invalid IP: {ip}") from exc
 
-
 def _validate_port(port: int) -> None:
     if port < 1 or port > 65535:
         raise SoarError("Port must be 1-65535")
 
-
 def _ensure_fortigate_device(device_ip: str) -> dict:
-    # Normalize to inventory key: strip optional port (e.g. "10.0.0.1:8443" -> "10.0.0.1")
     inventory_key, _, _ = device_ip.partition(":")
     dev = get_device(inventory_key)
     if not dev:
@@ -149,7 +125,6 @@ def _ensure_fortigate_device(device_ip: str) -> dict:
             f"SOAR action currently supports Fortinet only (got vendor={dev.get('vendor')})"
         )
     return dev
-
 
 def _do_block_ip(device_ip: str, token: str, target_ip: str) -> dict:
     _validate_ip(target_ip)
@@ -198,7 +173,6 @@ def _do_block_ip(device_ip: str, token: str, target_ip: str) -> dict:
         "policy_name": policy_name,
         "policy_response": policy_res,
     }
-
 
 def _do_close_port(device_ip: str, token: str, port: int, protocol: str) -> dict:
     _validate_port(port)
@@ -250,17 +224,8 @@ def _do_close_port(device_ip: str, token: str, port: int, protocol: str) -> dict
         "policy_response": policy_res,
     }
 
-
-def execute_soar_action(
-    *,
-    device_ip: str,
-    action_type: str,
-    parameters: dict,
-    requested_by: str = "api",
-    source: str = "manual",
-    dry_run: bool = False,
-) -> ActionResult:
-    # Normalize and validate parameters before using dict-unpacking.
+# Normalize and validate parameters before using dict-unpacking
+def execute_soar_action(*, device_ip: str, action_type: str, parameters: dict, requested_by: str = "api", source: str = "manual") -> ActionResult:
     if parameters is None:
         parameters = {}
     elif not isinstance(parameters, dict):
@@ -277,30 +242,14 @@ def execute_soar_action(
         device_ip=device_ip,
         vendor=dev["vendor"],
         action_type=action_type,
-        parameters={**parameters, "dry_run": dry_run},
+        parameters=parameters,
         requested_by=requested_by,
         source=source,
     )
 
     try:
-        if dry_run:
-            if action_type == "block_ip":
-                _validate_ip(str(parameters.get("target_ip", "")))
-            elif action_type == "close_port":
-                _validate_port(int(parameters.get("port", 0)))
-            else:
-                raise SoarError(f"Unsupported action_type: {action_type}")
-            planned = {
-                "device_ip": device_ip,
-                "action_type": action_type,
-                "parameters": parameters,
-                "note": "Dry run only. No device changes were made.",
-            }
-            update_soar_action_result(action_id, status="dry-run", result=planned)
-            return ActionResult(True, action_id, "dry-run", "Dry run successful", result=planned)
-
         token = _token_for_device(device_ip)
-        if not token:
+        if not token and not _is_localhost_device(device_ip):
             err = "Missing FortiGate API token (FORTIGATE_API_TOKEN or FORTIGATE_TOKENS_JSON)"
             update_soar_action_result(action_id, status="failed", error=err)
             return ActionResult(False, action_id, "failed", err, error=err)
@@ -322,14 +271,8 @@ def execute_soar_action(
         update_soar_action_result(action_id, status="failed", error=err)
         return ActionResult(False, action_id, "failed", err, error=err)
 
-
-def auto_respond_to_alert(
-    *,
-    alert_id: int,
-    severity: str,
-    affected_devices: list[str] | None,
-) -> list[dict]:
-    """Simple SOAR playbook: block each affected IP on every Fortinet device."""
+# Simple SOAR playbook: block each affected IP on every Fortinet device
+def auto_respond_to_alert(*, alert_id: int, severity: str, affected_devices: list[str] | None) -> list[dict]:
     if not SOAR_AUTO_RESPONSE_ENABLED:
         return []
 
@@ -355,7 +298,6 @@ def auto_respond_to_alert(
                 parameters={"target_ip": target_ip},
                 requested_by="analyzer",
                 source=f"auto-response:alert#{alert_id}",
-                dry_run=SOAR_AUTO_RESPONSE_DRY_RUN,
             )
             out.append(
                 {

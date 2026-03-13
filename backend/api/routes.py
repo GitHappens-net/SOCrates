@@ -88,7 +88,6 @@ def clear_chat():
     clear_session(session_id)
     return jsonify({"cleared": True})
 
-
 # ---------------------------------------------------------------------------
 # SOAR
 # ---------------------------------------------------------------------------
@@ -98,7 +97,6 @@ def execute_soar():
     device_ip = str(body.get("device_ip", "")).strip()
     action_type = str(body.get("action_type", "")).strip()
     parameters = body.get("parameters") or {}
-    dry_run = bool(body.get("dry_run", False))
     requested_by = str(body.get("requested_by", "api"))
     source = str(body.get("source", "manual"))
 
@@ -116,7 +114,6 @@ def execute_soar():
         parameters=parameters,
         requested_by=requested_by,
         source=source,
-        dry_run=dry_run,
     )
     code = 200 if res.ok else 400
     return jsonify(
@@ -130,14 +127,12 @@ def execute_soar():
         }
     ), code
 
-
 @api_bp.route("/soar/actions", methods=["GET"])
 def list_soar_actions():
     limit = request.args.get("limit", 50, type=int)
     offset = request.args.get("offset", 0, type=int)
     status = request.args.get("status")
     return jsonify(get_soar_actions(limit=min(limit, 500), offset=offset, status=status))
-
 
 @api_bp.route("/soar/actions/<int:action_id>", methods=["GET"])
 def single_soar_action(action_id: int):
@@ -146,12 +141,10 @@ def single_soar_action(action_id: int):
         return jsonify({"error": "SOAR action not found"}), 404
     return jsonify(action)
 
-
 @api_bp.route("/soar/playbooks/contain-host", methods=["POST"])
 def soar_contain_host():
     body = request.get_json(silent=True) or {}
     target_ip = str(body.get("target_ip", "")).strip()
-    dry_run = bool(body.get("dry_run", False))
 
     if not target_ip:
         return jsonify({"error": "target_ip is required"}), 400
@@ -168,7 +161,6 @@ def soar_contain_host():
             parameters={"target_ip": target_ip},
             requested_by="api",
             source="playbook:contain-host",
-            dry_run=dry_run,
         )
         results.append(
             {
@@ -184,7 +176,6 @@ def soar_contain_host():
     return jsonify(
         {
             "target_ip": target_ip,
-            "dry_run": dry_run,
             "results": results,
         }
     )

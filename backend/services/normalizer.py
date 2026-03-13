@@ -128,8 +128,8 @@ def _parse_kv(raw_syslog: str, header_regex: str | None = None) -> dict | None:
         fields[key] = val.strip('"')
     return fields if fields else None
 
+# Derive action/service/srcip/dstip/hostname from Cisco message text when available.
 def _enrich_cisco_fields(fields: dict) -> dict:
-    """Derive action/service/srcip/dstip/hostname from Cisco message text when available."""
     message = fields.get("message", "")
     if not isinstance(message, str) or not message:
         return fields
@@ -152,8 +152,8 @@ def _enrich_cisco_fields(fields: dict) -> dict:
 
     return fields
 
+# Vendor-agnostic best-effort enrichment from free-form message text.
 def _enrich_common_message_fields(fields: dict, source_ip: str) -> dict:
-    """Vendor-agnostic best-effort enrichment from free-form message text."""
     message = fields.get("message", "")
     if not isinstance(message, str) or not message:
         return fields

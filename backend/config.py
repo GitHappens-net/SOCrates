@@ -41,5 +41,5 @@ FORTIGATE_TIMEOUT_SECONDS: int = int(os.getenv("FORTIGATE_TIMEOUT_SECONDS", "10"
 
 # SOAR auto-response configuration (safe defaults)
 SOAR_AUTO_RESPONSE_ENABLED: bool = os.getenv("SOAR_AUTO_RESPONSE_ENABLED", "false").lower() in ("1", "true", "yes")
-SOAR_AUTO_RESPONSE_DRY_RUN: bool = os.getenv("SOAR_AUTO_RESPONSE_DRY_RUN", "true").lower() in ("1", "true", "yes")
 SOAR_AUTO_RESPONSE_MIN_SEVERITY: str = os.getenv("SOAR_AUTO_RESPONSE_MIN_SEVERITY", "high").lower()
+SOAR_CHAT_REQUIRE_CONFIRMATION: bool = os.getenv("SOAR_CHAT_REQUIRE_CONFIRMATION", "true").lower() in ("1", "true", "yes")
