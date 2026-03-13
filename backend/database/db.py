@@ -64,11 +64,29 @@ def init_db() -> None:
             resolved_at      TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS soar_actions (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+            updated_at    TEXT,
+            status        TEXT    NOT NULL DEFAULT 'pending',
+            device_ip     TEXT    NOT NULL,
+            vendor        TEXT    NOT NULL DEFAULT 'unknown',
+            action_type   TEXT    NOT NULL,
+            parameters    TEXT    NOT NULL DEFAULT '{}',
+            result        TEXT,
+            error         TEXT,
+            requested_by  TEXT    NOT NULL DEFAULT 'api',
+            source        TEXT    NOT NULL DEFAULT 'manual'
+        );
+
         CREATE INDEX IF NOT EXISTS idx_logs_source_ip   ON logs(source_ip);
         CREATE INDEX IF NOT EXISTS idx_logs_received_at ON logs(received_at);
         CREATE INDEX IF NOT EXISTS idx_logs_vendor      ON logs(vendor);
         CREATE INDEX IF NOT EXISTS idx_alerts_status    ON alerts(status);
         CREATE INDEX IF NOT EXISTS idx_alerts_severity  ON alerts(severity);
+        CREATE INDEX IF NOT EXISTS idx_soar_status      ON soar_actions(status);
+        CREATE INDEX IF NOT EXISTS idx_soar_created_at  ON soar_actions(created_at);
+        CREATE INDEX IF NOT EXISTS idx_soar_device_ip   ON soar_actions(device_ip);
     """)
     conn.commit()
     conn.close()
@@ -131,8 +149,16 @@ def upsert_devices_batch(conn: sqlite3.Connection, rows: list[tuple]) -> None:
            VALUES (?, ?, ?, ?)
            ON CONFLICT(ip) DO UPDATE SET
                hostname    = COALESCE(excluded.hostname, devices.hostname),
-               vendor      = excluded.vendor,
-               device_type = excluded.device_type,
+                             vendor      = CASE
+                                                             WHEN excluded.vendor IS NULL OR lower(excluded.vendor) = 'unknown'
+                                                             THEN devices.vendor
+                                                             ELSE excluded.vendor
+                                                         END,
+                             device_type = CASE
+                                                             WHEN excluded.device_type IS NULL OR lower(excluded.device_type) = 'unknown'
+                                                             THEN devices.device_type
+                                                             ELSE excluded.device_type
+                                                         END,
                last_seen   = datetime('now')""",
         rows,
     )
@@ -202,6 +228,19 @@ def get_alerts(
     conn.close()
     return [_row_to_alert(r) for r in rows]
 
+def get_alerts_since(minutes: int, limit: int = 100) -> list[dict]:
+    """Return alerts created within the last N minutes (newest first)."""
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT * FROM alerts
+           WHERE created_at >= datetime('now', ? || ' minutes')
+           ORDER BY created_at DESC
+           LIMIT ?""",
+        (f"-{minutes}", limit),
+    ).fetchall()
+    conn.close()
+    return [_row_to_alert(r) for r in rows]
+
 def get_alert(alert_id: int) -> dict | None:
     conn = get_connection()
     row = conn.execute("SELECT * FROM alerts WHERE id = ?", (alert_id,)).fetchone()
@@ -252,6 +291,20 @@ def get_devices_list() -> list[dict]:
     conn.close()
     return [dict(r) for r in rows]
 
+def get_device(ip: str) -> dict | None:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM devices WHERE ip = ?", (ip,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_fortigate_devices() -> list[dict]:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM devices WHERE lower(vendor) = 'fortinet' ORDER BY last_seen DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
 def get_recent_logs(limit: int = 100, offset: int = 0, source_ip: str | None = None) -> list[dict]:
     conn = get_connection()
     if source_ip:
@@ -278,9 +331,116 @@ def get_log_stats() -> dict:
     by_device = conn.execute(
         "SELECT source_ip, COUNT(*) as cnt FROM logs GROUP BY source_ip ORDER BY cnt DESC LIMIT 10"
     ).fetchall()
+    by_device_detailed = conn.execute(
+        """SELECT
+               l.source_ip AS ip,
+               COUNT(*) AS cnt,
+               d.hostname AS hostname,
+               COALESCE(d.vendor, l.vendor, 'unknown') AS vendor,
+               COALESCE(d.device_type, l.device_type, 'unknown') AS device_type
+           FROM logs l
+           LEFT JOIN devices d ON d.ip = l.source_ip
+           GROUP BY l.source_ip
+           ORDER BY cnt DESC
+           LIMIT 10"""
+    ).fetchall()
     conn.close()
     return {
         "total_logs": total,
         "by_vendor": {r["vendor"]: r["cnt"] for r in by_vendor},
         "by_device": {r["source_ip"]: r["cnt"] for r in by_device},
+        "by_device_detailed": [
+            {
+                "ip": r["ip"],
+                "hostname": r["hostname"],
+                "vendor": r["vendor"],
+                "device_type": r["device_type"],
+                "count": r["cnt"],
+            }
+            for r in by_device_detailed
+        ],
+    }
+
+# ---------------------------------------------------------------------------
+# SOAR actions
+# ---------------------------------------------------------------------------
+def create_soar_action(
+    device_ip: str,
+    vendor: str,
+    action_type: str,
+    parameters: dict,
+    requested_by: str = "api",
+    source: str = "manual",
+) -> int:
+    conn = get_connection()
+    cur = conn.execute(
+        """INSERT INTO soar_actions
+           (device_ip, vendor, action_type, parameters, requested_by, source)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (device_ip, vendor, action_type, json.dumps(parameters), requested_by, source),
+    )
+    conn.commit()
+    action_id = cur.lastrowid
+    conn.close()
+    return action_id
+
+def update_soar_action_result(
+    action_id: int,
+    status: str,
+    result: dict | None = None,
+    error: str | None = None,
+) -> bool:
+    conn = get_connection()
+    cur = conn.execute(
+        """UPDATE soar_actions
+           SET status = ?,
+               result = ?,
+               error = ?,
+               updated_at = datetime('now')
+           WHERE id = ?""",
+        (status, json.dumps(result or {}), error, action_id),
+    )
+    conn.commit()
+    changed = cur.rowcount > 0
+    conn.close()
+    return changed
+
+def get_soar_actions(limit: int = 50, offset: int = 0, status: str | None = None) -> list[dict]:
+    conn = get_connection()
+    if status:
+        rows = conn.execute(
+            """SELECT * FROM soar_actions
+               WHERE status = ?
+               ORDER BY id DESC
+               LIMIT ? OFFSET ?""",
+            (status, limit, offset),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM soar_actions ORDER BY id DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+    conn.close()
+    return [_row_to_soar_action(r) for r in rows]
+
+def get_soar_action(action_id: int) -> dict | None:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM soar_actions WHERE id = ?", (action_id,)).fetchone()
+    conn.close()
+    return _row_to_soar_action(row) if row else None
+
+def _row_to_soar_action(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "status": row["status"],
+        "device_ip": row["device_ip"],
+        "vendor": row["vendor"],
+        "action_type": row["action_type"],
+        "parameters": json.loads(row["parameters"] or "{}"),
+        "result": json.loads(row["result"] or "{}") if row["result"] else None,
+        "error": row["error"],
+        "requested_by": row["requested_by"],
+        "source": row["source"],
     }

@@ -3,8 +3,8 @@ import json
 import re
 import time
 
-from backend.config import OPENAI_CLIENT, OPENAI_MODEL_PARSER
-from backend.database.db import load_templates, save_template
+from config import OPENAI_CLIENT, OPENAI_MODEL_PARSER
+from database.db import load_templates, save_template
 
 _OPENAI_CLIENT: object | None = OPENAI_CLIENT
 _OPENAI_MODEL: str = OPENAI_MODEL_PARSER
@@ -16,7 +16,7 @@ _TEMPLATES: list[dict] = [
         "device_type": "Cisco IOS Router",
         "regex": (
             r"<(?P<priority>\d+)>"
-            r"\d+:\s*\*?"
+            r"\d+:\s*\*?\s*"
             r"(?P<log_timestamp>[A-Z][a-z]{2}\s+\d+\s+[\d:\.]+):\s*"
             r"%(?P<facility>[A-Z0-9]+)-(?P<severity_level>\d+)-(?P<mnemonic>[A-Z0-9_]+):\s*"
             r"(?P<message>.*)"
@@ -58,6 +58,25 @@ _AI_FAILED: dict[str, float] = {}
 _AI_FAILED_TTL: float = 300.0  # retry after 5 minutes
 
 _KV_RE = re.compile(r'(\w+)=("[^"]*"|\S+)')
+
+_CISCO_ACL_RE = re.compile(
+    r"\blist\s+(?P<acl>\S+)\s+"
+    r"(?P<action>permitted|denied)\s+"
+    r"(?P<service>[A-Za-z0-9_\-]+)\s+"
+    r"(?P<srcip>\d+\.\d+\.\d+\.\d+)"
+    r"(?:\([^)]*\))?\s*->\s*"
+    r"(?P<dstip>\d+\.\d+\.\d+\.\d+)",
+    re.IGNORECASE,
+)
+
+_HEARTBEAT_HOST_RE = re.compile(r"\bHEARTBEAT:\s*(?P<hostname>[A-Za-z0-9_.-]+)\b")
+_ARROW_IP_RE = re.compile(
+    r"(?P<srcip>\d+\.\d+\.\d+\.\d+)"
+    r"(?:\([^)]*\))?\s*->\s*"
+    r"(?P<dstip>\d+\.\d+\.\d+\.\d+)",
+    re.IGNORECASE,
+)
+_PROTO_RE = re.compile(r"\b(tcp|udp|icmp|ospf|gre|esp|http|https|ssh|dns|snmp)\b", re.IGNORECASE)
 
 # Load AI-generated templates persisted in the database
 def init_templates() -> None:
@@ -108,6 +127,57 @@ def _parse_kv(raw_syslog: str, header_regex: str | None = None) -> dict | None:
     for key, val in _KV_RE.findall(payload):
         fields[key] = val.strip('"')
     return fields if fields else None
+
+# Derive action/service/srcip/dstip/hostname from Cisco message text when available.
+def _enrich_cisco_fields(fields: dict) -> dict:
+    message = fields.get("message", "")
+    if not isinstance(message, str) or not message:
+        return fields
+
+    m = _CISCO_ACL_RE.search(message)
+    if m:
+        for key in ("acl", "action", "service", "srcip", "dstip"):
+            val = m.groupdict().get(key)
+            if val and key not in fields:
+                fields[key] = val
+
+    hm = _HEARTBEAT_HOST_RE.search(message)
+    if hm and hm.group("hostname") and "hostname" not in fields:
+        fields["hostname"] = hm.group("hostname")
+
+    # Heartbeat messages do not include ACL-style action/service; infer them for UI clarity.
+    if "heartbeat" in message.lower():
+        fields.setdefault("action", "heartbeat")
+        fields.setdefault("service", "ha")
+
+    return fields
+
+# Vendor-agnostic best-effort enrichment from free-form message text.
+def _enrich_common_message_fields(fields: dict, source_ip: str) -> dict:
+    message = fields.get("message", "")
+    if not isinstance(message, str) or not message:
+        return fields
+
+    arrow = _ARROW_IP_RE.search(message)
+    if arrow:
+        fields.setdefault("srcip", arrow.group("srcip"))
+        fields.setdefault("dstip", arrow.group("dstip"))
+
+    proto = _PROTO_RE.search(message)
+    if proto:
+        fields.setdefault("service", proto.group(1).lower())
+
+    low = message.lower()
+    if "action" not in fields:
+        if any(tok in low for tok in ("permit", "allowed", "accepted")):
+            fields["action"] = "permitted"
+        elif any(tok in low for tok in ("deny", "denied", "blocked", "dropped")):
+            fields["action"] = "denied"
+        elif "heartbeat" in low:
+            fields["action"] = "heartbeat"
+
+    fields.setdefault("srcip", source_ip)
+    return fields
 
 # Generate parsing template via OpenAI
 def _ai_generate_template(raw_syslog: str, fingerprint: str) -> dict | None:
@@ -165,13 +235,19 @@ def normalize_log(source_ip: str, raw_syslog: str) -> dict:
     facility, severity = _extract_priority(raw_syslog)
     fp = _fingerprint(source_ip, raw_syslog)
 
-    # Try existing templates
+    # Try existing templates for THIS fingerprint only.
+    # Without this filter, a learned template for one source can mislabel others.
     for template in _TEMPLATES:
+        if template.get("fingerprint") != fp:
+            continue
         if template.get("parse_mode") == "kv":
             fields = _parse_kv(raw_syslog, template.get("header_regex"))
         else:
             fields = _try_match(template["regex"], raw_syslog)
         if fields:
+            if template["vendor"] == "Cisco":
+                fields = _enrich_cisco_fields(fields)
+            fields = _enrich_common_message_fields(fields, source_ip)
             return {
                 "fields": fields,
                 "facility": facility,
@@ -220,6 +296,10 @@ def normalize_log(source_ip: str, raw_syslog: str) -> dict:
         else:
             fields = _try_match(ai.get("regex", ""), raw_syslog)
         fields = fields or {"raw": raw_syslog}
+
+        if ai.get("vendor", "unknown") == "Cisco":
+            fields = _enrich_cisco_fields(fields)
+        fields = _enrich_common_message_fields(fields, source_ip)
 
         return {
             "fields": fields,

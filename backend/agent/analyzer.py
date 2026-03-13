@@ -4,8 +4,9 @@ import json
 import re
 import threading
 
-from backend.config import OPENAI_CLIENT, OPENAI_MODEL_AGENT, OPENAI_MODEL_REASONING
-from backend.database.db import get_alerts, get_devices_list, find_duplicate_alert, insert_alert
+from config import OPENAI_CLIENT, OPENAI_MODEL_AGENT, OPENAI_MODEL_REASONING
+from database.db import get_alerts, get_devices_list, find_duplicate_alert, insert_alert
+from services.soar import auto_respond_to_alert
 
 _CLIENT: object | None = OPENAI_CLIENT
 _MODEL_TRIAGE: str = OPENAI_MODEL_AGENT
@@ -226,6 +227,13 @@ def analyze_batch(batch: list[dict]) -> None:
                 related_logs=[_compact_log(e) for e in related[:20]],
             )
             print(f"[analyzer] stored triage-only alert #{alert_id}: {title}")
+            actions = auto_respond_to_alert(
+                alert_id=alert_id,
+                severity=finding["severity"],
+                affected_devices=[],
+            )
+            if actions:
+                print(f"[analyzer] auto-response triggered {len(actions)} action(s) for alert #{alert_id}")
             continue
 
         title = analysis.get("title", finding["title"])
@@ -242,6 +250,13 @@ def analyze_batch(batch: list[dict]) -> None:
             related_logs=[_compact_log(e) for e in related[:20]],
         )
         print(f"[analyzer] stored alert #{alert_id}: {title}")
+        actions = auto_respond_to_alert(
+            alert_id=alert_id,
+            severity=analysis.get("severity", finding["severity"]),
+            affected_devices=analysis.get("affected_devices", []),
+        )
+        if actions:
+            print(f"[analyzer] auto-response triggered {len(actions)} action(s) for alert #{alert_id}")
 
 def analyze_batch_async(batch: list[dict]) -> None:
     threading.Thread(

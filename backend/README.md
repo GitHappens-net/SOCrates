@@ -1,5 +1,3 @@
-# Backend
-
 ## Quick Start
 
 ### 1. Install dependencies
@@ -22,10 +20,45 @@ SYSLOG_HOST=0.0.0.0
 SYSLOG_PORT=514
 API_HOST=0.0.0.0
 API_PORT=5000
+
+# SOAR / FortiGate API (optional)
+FORTIGATE_API_TOKEN=
+FORTIGATE_TOKENS_JSON={"127.0.0.1":"token1"}
+FORTIGATE_VERIFY_SSL=false
+FORTIGATE_TIMEOUT_SECONDS=10
+
+# SOAR auto-response (analyzer-driven)
+SOAR_AUTO_RESPONSE_ENABLED=false
+SOAR_AUTO_RESPONSE_MIN_SEVERITY=high
+
+# Chat-triggered SOAR safety controls
+SOAR_CHAT_REQUIRE_CONFIRMATION=true
 ```
 
 > **Windows note:** UDP port 514 requires an elevated (Administrator) shell.
 > Set `SYSLOG_PORT=5514` in `.env` to avoid this during development.
+
+---
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|---------|---------|---------|
+| `OPENAI_API_KEY` | none | OpenAI API key |
+| `OPENAI_MODEL_AGENT` | `gpt-4.1` | Tier-1 triage model |
+| `OPENAI_MODEL_PARSER` | `gpt-4.1` | Normalizer unknown-log template model |
+| `OPENAI_MODEL_REASONING` | `gpt-5.1` | Tier-2 analysis + chat model |
+| `SYSLOG_HOST` | `0.0.0.0` | UDP listener bind host |
+| `SYSLOG_PORT` | `514` | UDP listener bind port |
+| `API_HOST` | `0.0.0.0` | Flask bind host |
+| `API_PORT` | `5000` | Flask bind port |
+| `FORTIGATE_API_TOKEN` | empty | Global FortiGate API token fallback |
+| `FORTIGATE_TOKENS_JSON` | `{}` | Per-device token map: `{"<device_ip>":"<token>"}` |
+| `FORTIGATE_VERIFY_SSL` | `false` | Verify FortiGate TLS certs |
+| `FORTIGATE_TIMEOUT_SECONDS` | `10` | FortiGate API request timeout |
+| `SOAR_AUTO_RESPONSE_ENABLED` | `false` | Enable analyzer-triggered auto-response playbook |
+| `SOAR_AUTO_RESPONSE_MIN_SEVERITY` | `high` | Minimum alert severity to trigger auto-response |
+| `SOAR_CHAT_REQUIRE_CONFIRMATION` | `true` | Require confirm/cancel step before chat SOAR execution |
 
 ### 3. Start the backend
 
@@ -45,7 +78,6 @@ This starts three subsystems in one process:
 Convert a CIC-IDS CSV to parquet (one-time), then stream via syslog:
 
 ```powershell
-# The pre-built parquet collection is at data/datasets/CIC-IDS-Collection.parquet
 python -m tools.Log_Stream_Generator `
   --parquet data/datasets/CIC-IDS-Collection.parquet `
   --syslog --syslog-host 127.0.0.1 --syslog-port 514 `
@@ -82,6 +114,15 @@ All routes are prefixed with `/api`.
 |--------|------|-------------|
 | `POST` | `/chat` | Send a message. Body: `{"message": "...", "session_id": "..."}` |
 | `DELETE` | `/chat` | Clear a session's history. Body: `{"session_id": "..."}` |
+
+### SOAR
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/soar/actions` | Execute a SOAR action. Body includes `device_ip`, `action_type`, `parameters` |
+| `GET` | `/soar/actions` | List SOAR action history. Query: `status`, `limit`, `offset` |
+| `GET` | `/soar/actions/<id>` | Get one SOAR action record |
+| `POST` | `/soar/playbooks/contain-host` | Playbook: block a target IP on all Fortinet devices |
 
 ---
 
@@ -138,6 +179,24 @@ The model can answer questions like:
 - *"Can you correlate these events — is an attack underway?"*
 - *"How do I block this on the FortiGate?"*
 
+SOAR chat behavior:
+- Parses natural-language SOAR intents (e.g. close port, block IP)
+- Uses follow-up prompts when fields are missing
+- Requires confirmation before execution
+- Returns structured SOAR confirmation/result payloads for custom frontend rendering
+- Executes live by default
+
+### `services/soar.py` — FortiGate SOAR Executor
+
+Current supported FortiGate actions:
+- `close_port` (tcp/udp/both)
+- `block_ip`
+
+Capabilities:
+- Per-device and global token support
+- Action audit persistence (`soar_actions` table)
+- Simple auto-response playbook helper (`auto_respond_to_alert`)
+
 ### `api/routes.py` — REST API
 
 | Method | Endpoint | Description |
@@ -164,6 +223,7 @@ WAL mode for concurrent reads/writes. Four tables:
 | `templates` | AI-generated parsing templates (fingerprint, vendor, regex/header_regex, fields) |
 | `devices` | Auto-discovered device inventory (IP, hostname, vendor, type, first/last seen) |
 | `alerts` | AI analysis results (severity, title, summary, analysis, mitigations JSON, affected_devices JSON, related_logs JSON, status, resolved_at) |
+| `soar_actions` | SOAR action audit trail (status, device, action type, params, result/error, source, requested_by) |
 
 Batch operations (`insert_logs_batch`, `upsert_devices_batch`) use `executemany` for throughput. Alert CRUD supports filtering by status and severity.
 
