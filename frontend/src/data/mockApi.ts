@@ -1,11 +1,4 @@
-/* ── Mock data matching backend API shapes ────────────────────────── */
-
-import type {
-  ApiAlert,
-  ApiDevice,
-  ApiLog,
-  ApiStats,
-} from "../types";
+import type { ApiAlert, ApiDevice, ApiLog, ApiStats } from "../api/types";
 
 export const MOCK_DEVICES: ApiDevice[] = [
   { id: 1, ip: "10.0.0.1",       hostname: "FGT-SOCrates",  vendor: "Fortinet",  device_type: "FortiGate Firewall", first_seen: "2026-03-12 10:00:00", last_seen: "2026-03-12 18:30:00" },

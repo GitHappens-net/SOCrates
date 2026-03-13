@@ -1,12 +1,10 @@
-/* ── SOCrates backend API client ────────────────────────────────── */
-
 import type {
   ApiAlert,
   ApiChatResponse,
   ApiDevice,
   ApiLog,
   ApiStats,
-} from "../types";
+} from "./types";
 
 const BASE = "/api";
 
@@ -46,8 +44,7 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/* ── Alerts ───────────────────────────────────────────────────────── */
-
+/* Alerts */
 export function fetchAlerts(params?: {
   status?: string;
   severity?: string;
@@ -78,14 +75,12 @@ export function clearAlerts(): Promise<{ cleared: number }> {
   return del("/alerts");
 }
 
-/* ── Devices ──────────────────────────────────────────────────────── */
-
+/* Devices */
 export function fetchDevices(): Promise<ApiDevice[]> {
   return get("/devices");
 }
 
-/* ── Logs ─────────────────────────────────────────────────────────── */
-
+/* Logs */
 export function fetchLogs(params?: {
   limit?: number;
   offset?: number;
@@ -108,14 +103,12 @@ export function fetchDeviceLogs(
   return get(`/devices/${ip}/logs${qs ? `?${qs}` : ""}`);
 }
 
-/* ── Stats ────────────────────────────────────────────────────────── */
-
+/* Stats */
 export function fetchStats(): Promise<ApiStats> {
   return get("/stats");
 }
 
-/* ── Chat ─────────────────────────────────────────────────────────── */
-
+/* Chat */
 export function sendChat(
   message: string,
   sessionId = "default",

@@ -3,6 +3,7 @@ import { useDataMode } from "../context/DataContext";
 
 export default function Header() {
   const { useMock, toggleMock } = useDataMode();
+  
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between rounded-xl border border-gray-800 bg-white px-6 py-3 shadow-md">
 

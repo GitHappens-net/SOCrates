@@ -41,7 +41,7 @@ export default function useSimulatedData(): SimulatedData {
     aiConfidence: 97.3,
   });
 
-  // ── Tick: add a new log every 1.5 s ───────────────────────────────
+  // Tick: add a new log every 1.5s
   useEffect(() => {
     const iv = setInterval(() => {
       setLogs((prev) => {
@@ -52,7 +52,7 @@ export default function useSimulatedData(): SimulatedData {
     return () => clearInterval(iv);
   }, []);
 
-  // ── Tick: update traffic chart every 3 s ──────────────────────────
+  // Tick: update traffic chart every 3s
   useEffect(() => {
     const iv = setInterval(() => {
       setTrafficData((prev) => {
@@ -68,7 +68,7 @@ export default function useSimulatedData(): SimulatedData {
     return () => clearInterval(iv);
   }, []);
 
-  // ── Tick: update metrics & sparklines every 4 s ───────────────────
+  // Tick: update metrics & sparklines every 4d
   useEffect(() => {
     const iv = setInterval(() => {
       setMetrics((m) => ({

@@ -1,10 +1,9 @@
 import { useState, useMemo } from "react";
 import { Network, MonitorDot, ChevronRight } from "lucide-react";
 import { useDevices, useDeviceLogs } from "../hooks/useApiData";
-import type { ApiDevice, ApiLog } from "../types";
+import type { ApiDevice, ApiLog } from "../api/types";
 
-/* ── Node layout helpers ─────────────────────────────────────────── */
-
+/* Node layout helpers */
 const VENDOR_COLORS: Record<string, string> = {
   Fortinet: "#dc2626",
   Cisco:    "#2563eb",
@@ -80,8 +79,7 @@ function layoutNodes(devices: ApiDevice[], width: number, height: number): NodeP
   });
 }
 
-/* ── Network Map SVG ─────────────────────────────────────────────── */
-
+/* Network Map SVG */
 interface MapProps {
   devices: ApiDevice[];
   selected: string | null;
@@ -162,8 +160,7 @@ function NetworkMap({ devices, selected, onSelect }: MapProps) {
   );
 }
 
-/* ── Device Log Table ────────────────────────────────────────────── */
-
+/* Device Log Table */
 function DeviceLogTable({ logs, loading }: { logs: ApiLog[]; loading: boolean }) {
   if (loading) return <p className="p-4 text-sm text-gray-400">Loading logs...</p>;
   if (logs.length === 0) return <p className="p-4 text-sm text-gray-400">No logs for this device.</p>;
@@ -205,8 +202,7 @@ function DeviceLogTable({ logs, loading }: { logs: ApiLog[]; loading: boolean })
   );
 }
 
-/* ── Main Devices View ───────────────────────────────────────────── */
-
+/* Main Devices View */
 export default function DevicesView() {
   const { devices, loading } = useDevices();
   const [selectedIp, setSelectedIp] = useState<string | null>(null);

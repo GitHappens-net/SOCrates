@@ -1,5 +1,3 @@
-/* ── Backend API types ──────────────────────────────────────────── */
-
 export interface ApiAlert {
   id: number;
   created_at: string;

@@ -1,5 +1,3 @@
-/* ── Mock / seed data for the SOC dashboard ─────────────────────── */
-
 export type Severity = "low" | "medium" | "high" | "critical";
 export type ThreatAction = "block" | "investigate" | "ignore";
 
@@ -73,8 +71,7 @@ export interface ThreatMessage {
 
 export type ChatMessage = TextMessage | ThreatMessage;
 
-/* ── Constants ───────────────────────────────────────────────────── */
-
+/* Constants */
 const IPS: string[] = [
   "192.168.1.105", "10.0.0.34", "172.16.0.88", "45.33.32.156",
   "203.0.113.42", "198.51.100.7", "91.198.174.192", "104.26.10.78",
@@ -102,8 +99,7 @@ const AI_INSIGHTS: string[] = [
   "Encrypted payload on non-standard port — investigating.",
 ];
 
-/* ── Utility functions ───────────────────────────────────────────── */
-
+/* Utility functions */
 export function randomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -140,8 +136,7 @@ export function seedSparkline(): SparkPoint[] {
   return Array.from({ length: 12 }, () => ({ v: randomBetween(30, 100) }));
 }
 
-/* ── Seed / static data ──────────────────────────────────────────── */
-
+/* Seed / static data */
 export const THREAT_DISTRIBUTION: ThreatDistributionItem[] = [
   { name: "DDoS",          value: 38, fill: "#dc2626" },
   { name: "SQL Injection", value: 22, fill: "#f59e0b" },

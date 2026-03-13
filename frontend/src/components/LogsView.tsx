@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { MonitorDot, ChevronDown, ChevronUp } from "lucide-react";
 import { useLogs } from "../hooks/useApiData";
-import type { ApiLog } from "../types";
+import type { ApiLog } from "../api/types";
 
-/* ── Severity helpers ────────────────────────────────────────────── */
-
+/* Severity helpers */
 function sevLabel(n: number): string {
   if (n <= 2) return "critical";
   if (n <= 3) return "high";
@@ -49,8 +48,7 @@ function flowSummary(log: ApiLog): { action: string; service: string } {
   return { action, service };
 }
 
-/* ── Expandable row ──────────────────────────────────────────────── */
-
+/* Expandable row */
 function LogRow({ log }: { log: ApiLog }) {
   const [open, setOpen] = useState(false);
   const pf = log.parsed_fields ?? {};
@@ -105,8 +103,7 @@ function LogRow({ log }: { log: ApiLog }) {
   );
 }
 
-/* ── Main Logs View ──────────────────────────────────────────────── */
-
+/* Main Logs View */
 export default function LogsView() {
   const { logs, loading } = useLogs(200, 5000);
 

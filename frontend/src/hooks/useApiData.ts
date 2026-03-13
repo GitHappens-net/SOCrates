@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDataMode } from "../context/DataContext";
 import { fetchDevices, fetchLogs, fetchAlerts, fetchStats, fetchDeviceLogs } from "../api/client";
-import type { ApiAlert, ApiDevice, ApiLog, ApiStats } from "../types";
+import type { ApiAlert, ApiDevice, ApiLog, ApiStats } from "../api/types";
 import { MOCK_DEVICES, MOCK_ALERTS, MOCK_STATS, generateMockLogs } from "../data/mockApi";
 
-/* ── Devices ─────────────────────────────────────────────────────── */
-
+/* Devices */
 export function useDevices() {
   const { useMock } = useDataMode();
   const [devices, setDevices] = useState<ApiDevice[]>([]);
@@ -29,8 +28,7 @@ export function useDevices() {
   return { devices, loading };
 }
 
-/* ── Logs (with polling) ─────────────────────────────────────────── */
-
+/* Logs (with polling) */
 export function useLogs(limit = 100, pollMs = 5000) {
   const { useMock } = useDataMode();
   const [logs, setLogs] = useState<ApiLog[]>([]);
@@ -57,8 +55,7 @@ export function useLogs(limit = 100, pollMs = 5000) {
   return { logs, loading };
 }
 
-/* ── Device Logs ─────────────────────────────────────────────────── */
-
+/* Device Logs */
 export function useDeviceLogs(ip: string | null, limit = 50) {
   const { useMock } = useDataMode();
   const [logs, setLogs] = useState<ApiLog[]>([]);
@@ -83,8 +80,7 @@ export function useDeviceLogs(ip: string | null, limit = 50) {
   return { logs, loading };
 }
 
-/* ── Alerts ──────────────────────────────────────────────────────── */
-
+/* Alerts */
 export function useAlerts(pollMs = 10000) {
   const { useMock } = useDataMode();
   const [alerts, setAlerts] = useState<ApiAlert[]>([]);
@@ -110,8 +106,7 @@ export function useAlerts(pollMs = 10000) {
   return { alerts, loading, reload };
 }
 
-/* ── Stats ────────────────────────────────────────────────────────── */
-
+/* Stats */
 export function useStats(pollMs = 8000) {
   const { useMock } = useDataMode();
   const [stats, setStats] = useState<ApiStats | null>(null);
@@ -128,8 +123,10 @@ export function useStats(pollMs = 8000) {
       fetchStats()
         .then((d) => {
           if (!cancelled) {
-            prevTotal.current = stats?.total_logs ?? d.total_logs;
-            setStats(d);
+            setStats((prev) => {
+              prevTotal.current = prev?.total_logs ?? d.total_logs;
+              return d;
+            });
           }
         })
         .catch(() => {});
@@ -137,7 +134,6 @@ export function useStats(pollMs = 8000) {
     load();
     const iv = setInterval(load, pollMs);
     return () => { cancelled = true; clearInterval(iv); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useMock, pollMs]);
 
   return { stats, prevTotal: prevTotal.current };

@@ -8,14 +8,12 @@ import { useStats, useAlerts } from "../hooks/useApiData";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import type { TooltipProps } from "recharts";
 
-/* ── Pie colors ──────────────────────────────────────────────────── */
-
+/* Pie colors */
 const VENDOR_PALETTE = [
   "#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#06b6d4", "#64748b",
 ];
 
-/* ── Custom tooltip ──────────────────────────────────────────────── */
-
+/* Custom tooltip */
 function PieTooltip({ active, payload }: TooltipProps<number, string>) {
   if (!active || !payload?.length) return null;
   const d = payload[0];
@@ -27,8 +25,7 @@ function PieTooltip({ active, payload }: TooltipProps<number, string>) {
   );
 }
 
-/* ── Main Dashboard View ─────────────────────────────────────────── */
-
+/* Main Dashboard View */
 export default function DashboardView() {
   const { stats } = useStats();
   const { alerts } = useAlerts();
@@ -166,8 +163,7 @@ export default function DashboardView() {
   );
 }
 
-/* ── Metric Card ─────────────────────────────────────────────────── */
-
+/* Metric Card */
 type Accent = "blue" | "red" | "orange" | "green";
 
 const COLOR: Record<Accent, { bg: string; text: string }> = {
@@ -177,17 +173,7 @@ const COLOR: Record<Accent, { bg: string; text: string }> = {
   green:  { bg: "bg-green-50 border-green-600", text: "text-green-700" },
 };
 
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  accent,
-}: {
-  icon: typeof Activity;
-  label: string;
-  value: string;
-  accent: Accent;
-}) {
+function MetricCard({icon: Icon, label, value, accent}: {icon: typeof Activity; label: string; value: string; accent: Accent}) {
   const c = COLOR[accent];
   return (
     <div className="flex flex-col justify-between rounded-lg border border-black bg-white p-5">

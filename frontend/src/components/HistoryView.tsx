@@ -9,10 +9,9 @@ import {
 } from "lucide-react";
 import { useAlerts } from "../hooks/useApiData";
 import { patchAlertStatus } from "../api/client";
-import type { ApiAlert } from "../types";
+import type { ApiAlert } from "../api/types";
 
-/* ── Severity badge ──────────────────────────────────────────────── */
-
+/* Severity badge */
 const SEV_CLASSES: Record<string, string> = {
   critical: "bg-red-100 text-red-700 ring-red-400",
   high:     "bg-orange-100 text-orange-700 ring-orange-400",
@@ -27,8 +26,7 @@ const STATUS_ICON: Record<string, typeof CheckCircle2> = {
   dismissed:    XCircle,
 };
 
-/* ── Alert card (expandable) ─────────────────────────────────────── */
-
+/* Alert card */
 function AlertCard({ alert, onStatusChange }: { alert: ApiAlert; onStatusChange: () => void }) {
   const [open, setOpen] = useState(false);
   const StatusIcon = STATUS_ICON[alert.status] ?? AlertTriangle;
@@ -150,8 +148,7 @@ function AlertCard({ alert, onStatusChange }: { alert: ApiAlert; onStatusChange:
   );
 }
 
-/* ── Main History View ───────────────────────────────────────────── */
-
+/* Main History View */
 export default function HistoryView() {
   const { alerts, loading, reload } = useAlerts();
   const [filter, setFilter] = useState<string>("all");

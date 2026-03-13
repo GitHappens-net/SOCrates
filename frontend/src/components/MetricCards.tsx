@@ -1,11 +1,4 @@
-import {
-  Activity,
-  ShieldOff,
-  AlertOctagon,
-  BrainCircuit,
-  TrendingUp,
-  TrendingDown,
-} from "lucide-react";
+import { Activity, ShieldOff, AlertOctagon, BrainCircuit, TrendingUp, TrendingDown } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import type { Metrics, Sparklines, SparkPoint } from "../data/mockData";
@@ -127,4 +120,3 @@ export default function MetricCards({ metrics, sparklines }: MetricCardsProps) {
     </div>
   );
 }
-
