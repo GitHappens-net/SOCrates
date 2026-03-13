@@ -139,7 +139,9 @@ def _validate_port(port: int) -> None:
 
 
 def _ensure_fortigate_device(device_ip: str) -> dict:
-    dev = get_device(device_ip)
+    # Normalize to inventory key: strip optional port (e.g. "10.0.0.1:8443" -> "10.0.0.1")
+    inventory_key, _, _ = device_ip.partition(":")
+    dev = get_device(inventory_key)
     if not dev:
         raise SoarError(f"Unknown device IP: {device_ip}")
     if str(dev.get("vendor", "")).lower() != "fortinet":
