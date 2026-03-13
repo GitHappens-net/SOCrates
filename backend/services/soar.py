@@ -260,6 +260,13 @@ def execute_soar_action(
     source: str = "manual",
     dry_run: bool = False,
 ) -> ActionResult:
+    # Normalize and validate parameters before using dict-unpacking.
+    if parameters is None:
+        parameters = {}
+    elif not isinstance(parameters, dict):
+        err = f"Invalid parameters type: expected dict, got {type(parameters).__name__}"
+        return ActionResult(False, 0, "failed", err, error=err)
+
     try:
         dev = _ensure_fortigate_device(device_ip)
     except Exception as exc:
