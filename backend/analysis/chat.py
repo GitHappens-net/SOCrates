@@ -5,12 +5,12 @@ import re
 import threading
 from datetime import datetime
 
-from config import (
+from ..config import (
     OPENAI_CLIENT,
     OPENAI_MODEL_REASONING,
 )
-from database.db import get_alerts, get_alerts_since, get_devices_list, get_log_stats
-from services.soar import execute_soar_action
+from ..database.db import get_alerts, get_alerts_since, get_devices_list, get_log_stats
+from ..services.soar import execute_soar_action
 
 _CLIENT: object | None = OPENAI_CLIENT
 _MODEL: str = OPENAI_MODEL_REASONING

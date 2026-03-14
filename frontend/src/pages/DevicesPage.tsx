@@ -5,6 +5,17 @@ import { getVendorColor } from "@/utils/colors";
 import type { ApiDevice, ApiLog } from "@/api/types";
 
 /* Node layout helpers */
+const VENDOR_COLORS: Record<string, string> = {
+  Fortinet: "#dc2626",
+  Cisco:    "#2563eb",
+  Linux:    "#16a34a",
+  Windows:  "#7c3aed",
+  "Palo Alto": "#ea580c",
+};
+
+function vendorColor(vendor: string): string {
+  return VENDOR_COLORS[vendor] ?? "#6b7280";
+}
 
 function pickFirst(...vals: Array<string | undefined | null>): string | null {
   for (const v of vals) {

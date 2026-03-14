@@ -1,9 +1,9 @@
 import socket
 import threading
 
-from api.app import create_app
-from config import SYSLOG_HOST, SYSLOG_PORT, API_HOST, API_PORT
-from services.pipeline import process_log, start_pipeline
+from .api.app import create_app
+from .config import SYSLOG_HOST, SYSLOG_PORT, API_HOST, API_PORT
+from .services.pipeline import process_log, start_pipeline
 
 def _run_api() -> None:
     app = create_app()
@@ -13,11 +13,18 @@ def _run_syslog() -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((SYSLOG_HOST, SYSLOG_PORT))
     print(f"[syslog] listening on UDP {SYSLOG_HOST}:{SYSLOG_PORT}")
-    while True:
-        data, addr = sock.recvfrom(8192)
-        source_ip = addr[0]
-        raw_syslog = data.decode(errors="ignore").strip()
-        process_log(source_ip, raw_syslog)
+    sock.settimeout(1.0)  # Make recvfrom non-blocking so it responds to KeyboardInterrupt on Windows
+    try:
+        while True:
+            try:
+                data, addr = sock.recvfrom(8192)
+                source_ip = addr[0]
+                raw_syslog = data.decode(errors="ignore").strip()
+                process_log(source_ip, raw_syslog)
+            except socket.timeout:
+                continue
+    finally:
+        sock.close()
 
 def main() -> None:
     start_pipeline()

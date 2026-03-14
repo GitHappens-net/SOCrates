@@ -4,6 +4,7 @@
 .env
 *.db*
 __pycache__/
+.vscode/
 
 # Frontend
 node_modules

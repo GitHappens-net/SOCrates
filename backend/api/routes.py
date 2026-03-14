@@ -1,11 +1,11 @@
 from flask import Blueprint, jsonify, request
 
-from agent.chat import chat, clear_session
-from database.db import (
+from ..analysis.chat import chat, clear_session
+from ..database.db import (
     clear_alerts, get_alert, get_alerts, get_devices_list,
     get_fortigate_devices, get_log_stats, get_recent_logs,
     get_soar_action, get_soar_actions, update_alert_status)
-from services.soar import execute_soar_action
+from ..services.soar import execute_soar_action
 
 api_bp = Blueprint("api", __name__)
 

@@ -60,8 +60,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Server bind address (default: 127.0.0.1).")
     p.add_argument("--port", type=int, default=5050,
                    help="Server port (default: 5050).")
-    p.add_argument("--syslog", action="store_true",
-                   help="Send logs as syslog UDP to --syslog-host:--syslog-port.")
+    p.add_argument("--syslog", action="store_true", default=True,
+                   help="Send logs as syslog UDP to --syslog-host:--syslog-port (now ON by default).")
     p.add_argument("--syslog-host", type=str, default="127.0.0.1",
                    help="Syslog server host (default: 127.0.0.1).")
     p.add_argument("--syslog-port", type=int, default=514,
