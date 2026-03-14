@@ -25,9 +25,11 @@ def sink_file(path: Path, fmt: str):
     return _write
 
 
-def sink_syslog(host: str = "127.0.0.1", port: int = 514):
+def sink_syslog(host: str = "127.0.0.1", port: int = 514, source_ip: str | None = None):
     import socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if source_ip:
+        sock.bind((source_ip, 0))
     sent_count = 0
 
     def _send_syslog(line: str) -> None:

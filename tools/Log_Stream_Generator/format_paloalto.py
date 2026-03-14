@@ -70,7 +70,7 @@ def format_paloalto_csv(row: pd.Series, ts: datetime, flow_id: int) -> str:
     label = row["Label"]
     h = hashlib.md5(f"{flow_id}".encode(), usedforsecurity=False).digest()
 
-    src_ip = _synth_ip(flow_id, "src", internal=True)
+    src_ip = _synth_ip(flow_id, "src-palo", internal=True)
     dst_ip = _synth_ip(flow_id, "dst", internal=(label != "Benign" and h[3] % 3 == 0))
     src_port = _fg_ephemeral_port(h[4])
     dst_port = _fg_well_known_port(h[5])

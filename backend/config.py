@@ -27,19 +27,32 @@ API_PORT: int = int(os.getenv("API_PORT", "5000"))
 # SOAR / FortiGate configuration
 FORTIGATE_API_TOKEN: str | None = os.getenv("FORTIGATE_API_TOKEN")
 FORTIGATE_TOKENS_JSON: dict[str, str] = {}
-_TOKENS_RAW = os.getenv("FORTIGATE_TOKENS_JSON", "")
-if _TOKENS_RAW:
+_FG_TOKENS_RAW = os.getenv("FORTIGATE_TOKENS_JSON", "")
+if _FG_TOKENS_RAW:
     try:
-        parsed = json.loads(_TOKENS_RAW)
+        parsed = json.loads(_FG_TOKENS_RAW)
         if isinstance(parsed, dict):
-            FORTIGATE_TOKENS_JSON = {str(k): str(v) for k, v in parsed.items()}
+            FORTIGATE_TOKENS_JSON = {str(k): str(v) for k, v in parsed.items()} 
     except json.JSONDecodeError:
         FORTIGATE_TOKENS_JSON = {}
 
 FORTIGATE_VERIFY_SSL: bool = os.getenv("FORTIGATE_VERIFY_SSL", "false").lower() in ("1", "true", "yes")
 FORTIGATE_TIMEOUT_SECONDS: int = int(os.getenv("FORTIGATE_TIMEOUT_SECONDS", "10"))
 
-# SOAR auto-response configuration (safe defaults)
-SOAR_AUTO_RESPONSE_ENABLED: bool = os.getenv("SOAR_AUTO_RESPONSE_ENABLED", "false").lower() in ("1", "true", "yes")
+# SOAR / Palo Alto configuration
+PALOALTO_API_KEY: str | None = os.getenv("PALOALTO_API_KEY")
+PALOALTO_TOKENS_JSON: dict[str, str] = {}
+_PA_TOKENS_RAW = os.getenv("PALOALTO_TOKENS_JSON", "")
+if _PA_TOKENS_RAW:
+    try:
+        parsed = json.loads(_PA_TOKENS_RAW)
+        if isinstance(parsed, dict):
+            PALOALTO_TOKENS_JSON = {str(k): str(v) for k, v in parsed.items()} 
+    except json.JSONDecodeError:
+        PALOALTO_TOKENS_JSON = {}
+
+PALOALTO_VERIFY_SSL: bool = os.getenv("PALOALTO_VERIFY_SSL", "false").lower() in ("1", "true", "yes")
+PALOALTO_TIMEOUT_SECONDS: int = int(os.getenv("PALOALTO_TIMEOUT_SECONDS", "10"))
 SOAR_AUTO_RESPONSE_MIN_SEVERITY: str = os.getenv("SOAR_AUTO_RESPONSE_MIN_SEVERITY", "high").lower()
 SOAR_CHAT_REQUIRE_CONFIRMATION: bool = os.getenv("SOAR_CHAT_REQUIRE_CONFIRMATION", "true").lower() in ("1", "true", "yes")
+SOAR_AUTO_RESPONSE_ENABLED: bool = os.getenv("SOAR_AUTO_RESPONSE_ENABLED", "false").lower() in ("1", "true", "yes")

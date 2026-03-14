@@ -144,7 +144,7 @@ def format_fortigate(row: pd.Series, ts: datetime, flow_id: int) -> str:
     h = hashlib.md5(f"{flow_id}".encode(), usedforsecurity=False).digest()
 
     is_benign = label == "Benign"
-    src_ip = _synth_ip(flow_id, "src", internal=True)
+    src_ip = _synth_ip(flow_id, "src-forti", internal=True)
     dst_ip = _synth_ip(flow_id, "dst", internal=(not is_benign and h[3] % 3 == 0))
     src_port = _fg_ephemeral_port(h[4])
     dst_port = _fg_well_known_port(h[5])

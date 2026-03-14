@@ -51,17 +51,17 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Write output to this file instead of stdout.")
     p.add_argument("--endpoint", type=str, default=None,
                    help="POST each log to this HTTP endpoint.")
-    p.add_argument("--format", choices=["fortigate", "paloalto"],
-                   default="fortigate", dest="log_format",
-                   help="Output format (default: fortigate).")
+    p.add_argument("--from", choices=["fortigate", "paloalto"],
+                   default="fortigate", dest="from_device",
+                   help="Pretend to send logs from this device (sets format and source IP).")
     p.add_argument("--serve", action="store_true",
                    help="Start REST API server mode.")
     p.add_argument("--host", default="127.0.0.1",
                    help="Server bind address (default: 127.0.0.1).")
     p.add_argument("--port", type=int, default=5050,
                    help="Server port (default: 5050).")
-    p.add_argument("--syslog", action="store_true", default=True,
-                   help="Send logs as syslog UDP to --syslog-host:--syslog-port (now ON by default).")
+    p.add_argument("--syslog", action=argparse.BooleanOptionalAction, default=True,
+                   help="Send logs as syslog UDP to --syslog-host:--syslog-port (now ON by default). Use --no-syslog to disable.")
     p.add_argument("--syslog-host", type=str, default="127.0.0.1",
                    help="Syslog server host (default: 127.0.0.1).")
     p.add_argument("--syslog-port", type=int, default=514,
@@ -86,23 +86,28 @@ def main() -> None:
     print(f"[*] Loaded {len(df):,} flows  ({df['Label'].nunique()} labels)",
           file=sys.stderr)
     print(f"[*] Labels: {sorted(df['Label'].unique())}", file=sys.stderr)
-    print(f"[*] Format: {args.log_format}", file=sys.stderr)
+    log_format = args.from_device
+    print(f"[*] Format: {log_format}", file=sys.stderr)
 
     if args.serve:
-        run_server(df, args.host, args.port, args.log_format,
+        run_server(df, args.host, args.port, log_format,
                    args.speed, args.max_flows, args.seed)
         return
 
     sinks = []
     if args.output:
-        sinks.append(sink_file(args.output, args.log_format))
+        sinks.append(sink_file(args.output, log_format))
         print(f"[*] Writing to {args.output}", file=sys.stderr)
     if args.endpoint:
         sinks.append(sink_http(args.endpoint))
         print(f"[*] Posting to {args.endpoint}", file=sys.stderr)
     if args.syslog:
-        sinks.append(sink_syslog(args.syslog_host, args.syslog_port))
+        source_ip = "127.0.0.1" if log_format == "fortigate" else "127.0.0.2"
+
+        sinks.append(sink_syslog(args.syslog_host, args.syslog_port, source_ip))
         print(f"[*] Sending syslog to {args.syslog_host}:{args.syslog_port}", file=sys.stderr)
+        if source_ip:
+            print(f"[*] Spoofing source IP: {source_ip}", file=sys.stderr)
     if not sinks:
         sinks.append(sink_stdout)
 
@@ -117,7 +122,7 @@ def main() -> None:
             speed=args.speed,
             sample_frac=args.sample_frac,
             shuffle=not args.no_shuffle,
-            fmt=args.log_format,
+            fmt=log_format,
             seed=args.seed,
         ):
             for s in sinks:
