@@ -67,9 +67,9 @@ export default function Layout() {
         <div 
           className="flex-1 flex flex-col bg-[#5271ff] rounded-tl-xl overflow-hidden border-t-2 border-l-2 border-gray-700"
         >
-          <div className="flex min-h-0 flex-1 gap-4 p-6">
+          <div className="flex min-h-0 flex-1 gap-4 p-6 pr-4">
             {/* Main view injection point */}
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto pr-2">
               <Outlet />
             </div>
 
