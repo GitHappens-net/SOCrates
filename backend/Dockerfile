@@ -13,7 +13,7 @@ COPY . .
 ENV PYTHONPATH="/app"
 
 # Expose API port and syslog UDP port
-EXPOSE 8000
+EXPOSE 5000
 EXPOSE 514/udp
 
 # Run the backend as a module
