@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BotMessageSquare, Send, Trash2, ShieldAlert, CheckCircle2, XCircle } from "lucide-react";
+import { Bot, Send, Trash2, ShieldAlert, CheckCircle2, XCircle } from "lucide-react";
 import { sendChat, clearChat } from "@/api/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -270,15 +270,15 @@ export default function AIChatPanel() {
   }
 
   return (
-    <div className="flex h-full flex-col w-full rounded-xl border border-black bg-gray-100">
+    <div className="flex h-full flex-col w-full rounded-xl border-2 border-gray-700 bg-gray-100">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-300 px-4 py-3">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center">
-            <BotMessageSquare className="h-6 w-6 text-gray-700" />
+            <Bot className="h-6 w-6 text-gray-700" />
           </div>
           <div>
-            <p className="text-md font-semibold text-gray-900">SOCrates AI</p>
+            <p className="text-lg font-unica font-semibold tracking-wide text-gray-800">SOCRATES AI</p>
           </div>
         </div>
         <button

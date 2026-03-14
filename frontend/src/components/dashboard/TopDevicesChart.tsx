@@ -3,6 +3,7 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -12,6 +13,7 @@ import {
 interface DevicePoint {
   name: string;
   value: number;
+  fill?: string;
 }
 
 interface TopDevicesChartProps {
@@ -20,8 +22,8 @@ interface TopDevicesChartProps {
 
 export default function TopDevicesChart({ data }: TopDevicesChartProps) {
   return (
-    <div className="rounded-lg border border-black bg-white p-5 xl:col-span-2">
-      <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-gray-500">
+    <div className="rounded-xl border-2 border-gray-700 bg-gray-100 p-5 xl:col-span-2">
+      <h3 className="mb-4 text-md font-unica font-semibold uppercase tracking-wider text-gray-700">
         Top Devices by Log Volume
       </h3>
       <div className="h-[280px] w-full">
@@ -40,7 +42,11 @@ export default function TopDevicesChart({ data }: TopDevicesChartProps) {
               />
               <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
               <Tooltip />
-              <Bar dataKey="value" fill="#2563eb" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                {data.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.fill || "#2563eb"} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         ) : (

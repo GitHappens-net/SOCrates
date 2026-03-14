@@ -67,7 +67,7 @@ export default function Layout() {
         <div 
           className="flex-1 flex flex-col bg-[#5271ff] rounded-tl-xl overflow-hidden border-t-2 border-l-2 border-gray-700"
         >
-          <div className="flex min-h-0 flex-1 gap-4 px-6 py-5">
+          <div className="flex min-h-0 flex-1 gap-4 p-6">
             {/* Main view injection point */}
             <div className="min-h-0 flex-1 overflow-y-auto">
               <Outlet />
@@ -76,11 +76,9 @@ export default function Layout() {
             {/* AI Chat sidebar */}
              <div
               onPointerDown={handleDragStart}
-              className="hidden w-3 shrink-0 cursor-col-resize rounded bg-blue-700/40 transition hover:bg-blue-500/50 lg:block"
+              className="hidden w-3 -mx-1 shrink-0 cursor-col-resize rounded-full bg-blue-700/50 transition lg:block"
               title="Drag to resize chat"
               role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize chat panel"
             />
             <div className="hidden shrink-0 lg:flex" style={{ width: `${chatWidth}px` }}>
               <AIChatPanel />

@@ -31,7 +31,7 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
           <button
             key={id}
             onClick={() => onNavigate(id)}
-            className={`group relative flex h-11 w-11 items-center justify-center rounded-full border ${
+            className={`group relative flex h-10 w-10 items-center justify-center rounded-xl border ${
               active
                 ? "bg-[#5271ff] border border-[#5271ff] text-white"
                 : "border-transparent text-gray-700 hover:border-2 hover:border-gray-700 hover:bg-gray-200"

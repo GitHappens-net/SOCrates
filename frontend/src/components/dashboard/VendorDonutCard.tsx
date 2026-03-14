@@ -25,8 +25,8 @@ function PieTooltip({ active, payload }: TooltipProps<number, string>) {
 
 export default function VendorDonutCard({ data, totalLogs }: VendorDonutCardProps) {
   return (
-    <div className="flex flex-col rounded-lg border border-black bg-white p-5">
-      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-gray-500">
+    <div className="flex flex-col rounded-xl border-2 border-gray-700 bg-gray-100 p-5">
+      <h3 className="mb-2 text-md font-unica font-semibold uppercase tracking-wider text-gray-700">
         Logs by Vendor
       </h3>
       <div className="flex flex-1 items-center justify-center">
@@ -53,8 +53,8 @@ export default function VendorDonutCard({ data, totalLogs }: VendorDonutCardProp
               </PieChart>
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-2xl font-bold text-gray-900">{totalLogs}</span>
-              <span className="text-[10px] uppercase tracking-wider text-gray-500">Logs</span>
+              <span className="font-unica text-3xl font-bold text-gray-800">{totalLogs}</span>
+              <span className="text-[10px] uppercase tracking-wider text-gray-700">Logs</span>
             </div>
           </div>
         ) : (
@@ -63,8 +63,8 @@ export default function VendorDonutCard({ data, totalLogs }: VendorDonutCardProp
       </div>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
         {data.map((t) => (
-          <span key={t.name} className="flex items-center gap-1.5 text-gray-500">
-            <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: t.fill }} />
+          <span key={t.name} className="text-sm flex items-center gap-1.5 text-gray-700">
+            <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: t.fill }} />
             {t.name}
           </span>
         ))}

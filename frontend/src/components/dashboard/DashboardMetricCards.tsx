@@ -19,13 +19,13 @@ const COLOR: Record<Accent, { bg: string }> = {
 export default function DashboardMetricCard({ icon: Icon, label, value, accent }: DashboardMetricCardProps) {
   const c = COLOR[accent];
   return (
-    <div className="flex flex-col justify-between rounded-xl border border-gray-700 bg-gray-100 p-5">
+    <div className="flex flex-col justify-between rounded-xl border-2 border-gray-700 bg-gray-100 p-5">
       <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${c.bg}`}>
         <Icon className="h-5 w-5 text-white" />
       </div>
       <div className="mt-4">
-        <p className="text-xs uppercase tracking-wider text-gray-500">{label}</p>
-        <p className="mt-1 text-2xl font-bold text-black">{value}</p>
+        <p className="text-md font-unica uppercase tracking-wider font-semibold text-gray-700">{label}</p>
+        <p className="mt-1 text-3xl font-unica font-bold text-black">{value}</p>
       </div>
     </div>
   );
