@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Network, MonitorDot, ChevronRight } from "lucide-react";
-import { useDevices, useDeviceLogs } from "../hooks/useApiData";
-import type { ApiDevice, ApiLog } from "../api/types";
+import { useDevices, useDeviceLogs } from "@/hooks/useApiData";
+import type { ApiDevice, ApiLog } from "@/api/types";
 
 /* Node layout helpers */
 const VENDOR_COLORS: Record<string, string> = {
@@ -93,21 +93,6 @@ function NetworkMap({ devices, selected, onSelect }: MapProps) {
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full">
-      {/* Connection lines (all-to-all for simplicity) */}
-      {nodes.map((a, i) =>
-        nodes.slice(i + 1).map((b) => (
-          <line
-            key={`${a.device.ip}-${b.device.ip}`}
-            x1={a.x}
-            y1={a.y}
-            x2={b.x}
-            y2={b.y}
-            stroke="#e5e7eb"
-            strokeWidth={1.5}
-          />
-        )),
-      )}
-
       {/* Nodes */}
       {nodes.map(({ device, x, y }) => {
         const isSelected = device.ip === selected;
@@ -125,10 +110,12 @@ function NetworkMap({ devices, selected, onSelect }: MapProps) {
                 <animate attributeName="opacity" from="0.4" to="0" dur="1.2s" repeatCount="indefinite" />
               </circle>
             )}
-            <circle
-              cx={x}
-              cy={y}
-              r={22}
+            <rect
+              x={x - 22}
+              y={y - 22}
+              width={44}
+              height={44}
+              rx={6}
               fill={isSelected ? fill : "white"}
               stroke={fill}
               strokeWidth={isSelected ? 3 : 2}
@@ -229,7 +216,14 @@ export default function DevicesView() {
           </h3>
           <span className="ml-auto text-xs text-gray-400">{devices.length} devices</span>
         </div>
-        <div className="flex aspect-[5/3] items-center justify-center">
+        <div
+          className="flex aspect-[5/3] items-center justify-center rounded-lg border border-blue-100 bg-slate-50"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, rgba(148,163,184,0.2) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.2) 1px, transparent 1px)",
+            backgroundSize: "28px 28px",
+          }}
+        >
           {devices.length === 0 ? (
             <p className="text-sm text-gray-400">No devices discovered yet.</p>
           ) : (

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useDataMode } from "../context/DataContext";
-import { fetchDevices, fetchLogs, fetchAlerts, fetchStats, fetchDeviceLogs } from "../api/client";
-import type { ApiAlert, ApiDevice, ApiLog, ApiStats } from "../api/types";
-import { MOCK_DEVICES, MOCK_ALERTS, MOCK_STATS, generateMockLogs } from "../data/mockApi";
+import { useDataMode } from "@/context/DataContext";
+import { fetchDevices, fetchLogs, fetchAlerts, fetchStats, fetchDeviceLogs } from "@/api/client";
+import type { ApiAlert, ApiDevice, ApiLog, ApiStats } from "@/api/types";
+import { MOCK_DEVICES, MOCK_ALERTS, MOCK_STATS, generateMockLogs } from "@/api/data/mockApi";
 
 /* Devices */
 export function useDevices() {

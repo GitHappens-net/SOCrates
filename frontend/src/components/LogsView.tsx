@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { MonitorDot, ChevronDown, ChevronUp } from "lucide-react";
-import { useLogs } from "../hooks/useApiData";
-import type { ApiLog } from "../api/types";
+import { useLogs } from "@/hooks/useApiData";
+import type { ApiLog } from "@/api/types";
 
 /* Severity helpers */
 function sevLabel(n: number): string {
