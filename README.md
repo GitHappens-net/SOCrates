@@ -54,7 +54,7 @@ Ensure you have created the correct `.env` files for the backend and frontend:
   ```
 
 **2. Make sure the dataset is correctly placed**
-Ensure your parquet file is present at `data/CIC-IDS-Collection.parquet`. Note: Check for exact case sensitivity, especially on Linux (if your file is lowercase `cic-collection.parquet`, update the `docker-compose.yml` accordingly).
+Ensure your parquet file is present at `data/cic-collection.parquet` (this should match the path used in the manual setup section). Note: Check for exact case sensitivity, especially on Linux—if you choose a different filename, update the `docker-compose.yml` accordingly.
 
 **3. Start the application**
 To run the Frontend + Backend (no log simulator):
