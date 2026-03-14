@@ -9,8 +9,8 @@ RUN npm install
 # Copy the rest of the frontend code
 COPY . .
 
-# Expose Vite's default dev port
-EXPOSE 5173
+# Expose Vite's configured dev port
+EXPOSE 5174
 
 # Run the dev server on all network interfaces to be reachable from the host
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
