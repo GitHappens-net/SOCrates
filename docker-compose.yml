@@ -1,0 +1,42 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5174"
+    environment:
+      - CHOKIDAR_USEPOLLING=true # Useful for Vite dev server hot-reload in Docker
+      - VITE_BACKEND_URL=http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+      - "514:514/udp" # Syslog UDP
+    volumes:
+      - ./backend:/app/backend
+      - ./data:/app/data:ro
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - SYSLOG_HOST=0.0.0.0
+      - SYSLOG_PORT=514
+
+  tools:
+    build:
+      context: . # Build from root to grab backend/requirements.txt
+      dockerfile: tools/Dockerfile
+    profiles:
+      - simulator
+    ports:
+      - "5050:5050"
+    volumes:
+      - ./tools:/app/tools
+      - ./data:/app/data:ro
+    command: ["python", "-m", "tools.Log_Stream_Generator", "--parquet", "data/CIC-IDS-Collection.parquet", "--syslog", "--syslog-host", "backend", "--max-flows", "100", "--format", "fortigate", "--speed", "2"]

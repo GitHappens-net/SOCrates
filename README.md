@@ -40,7 +40,46 @@ API_PORT=5000
 
 ---
 
-## Running
+## Running with Docker (Recommended)
+
+The easiest way to run the entire stack (Frontend, Backend, and optionally the Log Engine) is using Docker.
+
+**1. Set up Environment Variables**
+Ensure you have created the correct `.env` files for the backend and frontend:
+
+- `backend/.env` (See configuration details above, make sure `OPENAI_API_KEY` is set).
+- `frontend/.env`
+  ```env
+  VITE_BACKEND_URL=http://backend:8000
+  ```
+
+**2. Make sure the dataset is correctly placed**
+Ensure your parquet file is present at `data/cic-collection.parquet` (this should match the path used in the manual setup section). Note: Check for exact case sensitivity, especially on Linux—if you choose a different filename, update the `docker-compose.yml` accordingly.
+
+**3. Start the application**
+To run the Frontend + Backend (no log simulator):
+```bash
+docker compose up --build
+```
+
+To run the Frontend + Backend + **Log Simulator**:
+```bash
+docker compose --profile simulator up --build
+```
+
+**Services will be available at:**
+- **Frontend Dashboard:** http://localhost:5173
+- **Backend API:** http://localhost:8000
+- **Simulator Server (if profile used):** http://localhost:5050
+
+To stop the containers:
+```bash
+docker compose down
+```
+
+---
+
+## Running Locally (Manual Setup)
 **Start the backend** (from project root):
 ```powershell
 python -m backend.main
