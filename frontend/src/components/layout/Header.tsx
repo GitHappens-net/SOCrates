@@ -1,8 +1,10 @@
-import { Wifi, ToggleLeft, ToggleRight } from "lucide-react";
+import { Wifi, WifiOff, ToggleLeft, ToggleRight } from "lucide-react";
 import { useDataMode } from "@/hooks/useDataMode";
+import { useHealthCheck } from "@/hooks/useApiData";
 
 export default function Header() {
   const { useMock, toggleMock } = useDataMode();
+  const isOnline = useHealthCheck(5000);
 
   return (
     <header className="flex items-center justify-between px-6 h-20 bg-gray-100 w-full shrink-0">
@@ -30,9 +32,9 @@ export default function Header() {
           </span>
         </button>
 
-        <div className="flex items-center gap-2 rounded-full text-green-700 bg-green-200 border-2 border-green-700 px-3 py-1">
-          <Wifi className="h-5 w-5" />
-          <span className="text-sm font-semibold">Operational</span>
+        <div className={`flex items-center gap-2 rounded-full border-2 px-3 py-1 ${isOnline ? 'text-green-700 bg-green-200 border-green-700' : 'text-red-700 bg-red-200 border-red-700'}`}>
+          {isOnline ? <Wifi className="h-5 w-5" /> : <WifiOff className="h-5 w-5" />}
+          <span className="text-sm font-semibold">{isOnline ? "Operational" : "Disconnected"}</span>
         </div>
       </div>
     </header>

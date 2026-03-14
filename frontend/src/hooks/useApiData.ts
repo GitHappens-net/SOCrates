@@ -5,7 +5,7 @@ import type { ApiAlert, ApiDevice, ApiLog, ApiStats } from "@/api/types";
 import { MOCK_DEVICES, MOCK_ALERTS, MOCK_STATS, generateMockLogs } from "@/api/data/mockApi";
 
 /* Devices */
-export function useDevices() {
+export function useDevices(pollMs = 10000) {
   const { useMock } = useDataMode();
   const [devices, setDevices] = useState<ApiDevice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,13 +17,15 @@ export function useDevices() {
       return;
     }
     let cancelled = false;
-    setLoading(true);
-    fetchDevices()
-      .then((d) => { if (!cancelled) setDevices(d); })
-      .catch(() => { if (!cancelled) setDevices([]); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [useMock]);
+    const load = () => {
+      fetchDevices()
+        .then((d) => { if (!cancelled) { setDevices(d); setLoading(false); } })
+        .catch(() => { if (!cancelled) setLoading(false); });
+    };
+    load();
+    const iv = setInterval(load, pollMs);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [useMock, pollMs]);
 
   return { devices, loading };
 }
@@ -80,7 +82,32 @@ export function useDeviceLogs(ip: string | null, limit = 50) {
   return { logs, loading };
 }
 
-/* Alerts */
+/* Health Check */
+export function useHealthCheck(pollMs = 10000) {
+  const { useMock } = useDataMode();
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    if (useMock) {
+      setIsOnline(true);
+      return;
+    }
+    let cancelled = false;
+    const check = async () => {
+      try {
+        await fetchStats();
+        if (!cancelled) setIsOnline(true);
+      } catch {
+        if (!cancelled) setIsOnline(false);
+      }
+    };
+    check();
+    const iv = setInterval(check, pollMs);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [useMock, pollMs]);
+
+  return isOnline;
+}
 export function useAlerts(pollMs = 10000) {
   const { useMock } = useDataMode();
   const [alerts, setAlerts] = useState<ApiAlert[]>([]);

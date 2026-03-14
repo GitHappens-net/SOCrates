@@ -55,7 +55,9 @@ function normalizeAssistantMarkdown(input: string): string {
   let text = input
     .replace(/\\r\\n/g, "\n")
     .replace(/\\n/g, "\n")
-    .replace(/\\t/g, "\t");
+    .replace(/\\t/g, "\t")
+    // Squash multiple empty lines into a single blank line
+    .replace(/\n{3,}/g, "\n\n");
 
   // If headers were escaped (\#), unescape them.
   text = text.replace(/(^|\n)\\#/g, "$1#");
@@ -138,31 +140,31 @@ function ChatBubble({ msg, onQuickReply }: { msg: ChatMsg; onQuickReply: (text: 
   }
 
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`rounded-3xl px-4 py-2.5 text-sm leading-relaxed ${
+        className={`max-w-[92%] rounded-[20px] px-4 py-2.5 text-sm leading-relaxed break-words overflow-hidden ${
           isUser ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-900"
         }`}
       >
         {isUser ? (
           <p className="whitespace-pre-wrap">{normalized}</p>
         ) : (
-          <div className="chat-markdown">
+          <div className="chat-markdown w-full min-w-0">
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkBreaks]}
               components={{
-                h1: ({ children }) => <h1 className="text-[1.05rem] font-bold">{children}</h1>,
-                h2: ({ children }) => <h2 className="text-[1rem] font-bold">{children}</h2>,
-                h3: ({ children }) => <h3 className="text-[0.95rem] font-bold">{children}</h3>,
-                p: ({ children }) => <p className="my-2">{children}</p>,
-                ul: ({ children }) => <ul className="my-2 list-disc pl-5">{children}</ul>,
-                ol: ({ children }) => <ol className="my-2 list-decimal pl-5">{children}</ol>,
-                li: ({ children }) => <li className="my-1">{children}</li>,
+                h1: ({ children }) => <h1 className="text-[1.05rem] font-bold mt-3 mb-1">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-[1rem] font-bold mt-3 mb-1">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-[0.95rem] font-bold mt-2 mb-1">{children}</h3>,
+                p: ({ children }) => <p className="mb-2 mt-1 last:mb-0 leading-snug">{children}</p>,
+                ul: ({ children }) => <ul className="mb-2 mt-1 list-disc pl-5 overflow-hidden">{children}</ul>,
+                ol: ({ children }) => <ol className="mb-2 mt-1 list-decimal pl-5 overflow-hidden">{children}</ol>,
+                li: ({ children }) => <li className="my-0.5 break-words leading-snug">{children}</li>,
                 pre: ({ children }) => (
-                  <pre className="my-2 overflow-x-auto rounded bg-gray-900 p-3 text-gray-100">{children}</pre>
+                  <pre className="my-2 max-w-full overflow-x-auto rounded bg-gray-900 p-3 text-gray-100">{children}</pre>
                 ),
                 code: ({ children, className }) => (
-                  <code className={`text-[12px] ${className ?? ""}`}>{children}</code>
+                  <code className={`text-[12px] break-words ${className ?? ""}`}>{children}</code>
                 ),
               }}
             >
@@ -193,17 +195,32 @@ function ThinkingIndicator() {
 
 /* Main AI Chat Panel */
 export default function AIChatPanel() {
-  const [messages, setMessages] = useState<ChatMsg[]>([
-    {
-      id: 1,
-      role: "assistant",
-      content:
-        "Ask me anything about your network security.",
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMsg[]>(() => {
+    const saved = sessionStorage.getItem("ai_chat_messages");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // ignore
+      }
+    }
+    return [
+      {
+        id: 1,
+        role: "assistant",
+        content: "Ask me anything about your network security.",
+      }
+    ];
+  });
+
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  /* Persist to session storage */
+  useEffect(() => {
+    sessionStorage.setItem("ai_chat_messages", JSON.stringify(messages));
+  }, [messages]);
 
   /* Auto-scroll to bottom */
   useEffect(() => {
@@ -211,6 +228,25 @@ export default function AIChatPanel() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isThinking]);
+
+  /* Listen for pre-fill events from other parts of the app */
+  useEffect(() => {
+    const handleSetTarget = (e: Event) => {
+      const customEvent = e as CustomEvent<string | null>;
+      const ip = customEvent.detail;
+      
+      setInput((prev) => {
+        // Strip out any existing "Target Device: <ip>\n" prefix so they don't stack up
+        let next = prev.replace(/^Target Device: [^\n]+\n*/gm, "").trimStart();
+        if (ip) {
+          next = `Target Device: ${ip}\n${next}`;
+        }
+        return next;
+      });
+    };
+    window.addEventListener("CHAT_SET_TARGET", handleSetTarget);
+    return () => window.removeEventListener("CHAT_SET_TARGET", handleSetTarget);
+  }, []);
 
   async function sendMessage(text: string): Promise<void> {
     if (!text.trim() || isThinking) return;

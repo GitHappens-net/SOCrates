@@ -1,10 +1,21 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Network, MonitorDot, ChevronRight } from "lucide-react";
 import { useDevices, useDeviceLogs } from "@/hooks/useApiData";
 import { getVendorColor } from "@/utils/colors";
 import type { ApiDevice, ApiLog } from "@/api/types";
 
 /* Node layout helpers */
+const VENDOR_COLORS: Record<string, string> = {
+  Fortinet: "#dc2626",
+  Cisco:    "#2563eb",
+  Linux:    "#16a34a",
+  Windows:  "#7c3aed",
+  "Palo Alto": "#ea580c",
+};
+
+function vendorColor(vendor: string): string {
+  return VENDOR_COLORS[vendor] ?? "#6b7280";
+}
 
 function pickFirst(...vals: Array<string | undefined | null>): string | null {
   for (const v of vals) {
@@ -252,6 +263,18 @@ export default function DevicesPage() {
 
   const selectedDevice = devices.find((d) => d.ip === selectedIp);
 
+  function handleSelectDevice(ip: string | null) {
+    setSelectedIp(ip);
+    window.dispatchEvent(new CustomEvent("CHAT_SET_TARGET", { detail: ip }));
+  }
+
+  // Clear target context on unmount or navigation
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(new CustomEvent("CHAT_SET_TARGET", { detail: null }));
+    };
+  }, []);
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -281,7 +304,7 @@ export default function DevicesPage() {
           {devices.length === 0 ? (
             <p className="text-sm text-gray-400">No devices discovered yet.</p>
           ) : (
-            <NetworkMap devices={devices} selected={selectedIp} onSelect={setSelectedIp} />
+            <NetworkMap devices={devices} selected={selectedIp} onSelect={handleSelectDevice} />
           )}
         </div>
       </div>
