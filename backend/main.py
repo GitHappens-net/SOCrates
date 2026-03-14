@@ -3,7 +3,7 @@ import threading
 
 from .api.app import create_app
 from .config import SYSLOG_HOST, SYSLOG_PORT, API_HOST, API_PORT
-from .services.pipeline import process_log, start_pipeline
+from .services.pipeline import queue_log, start_pipeline
 
 def _run_api() -> None:
     app = create_app()
@@ -20,7 +20,7 @@ def _run_syslog() -> None:
                 data, addr = sock.recvfrom(8192)
                 source_ip = addr[0]
                 raw_syslog = data.decode(errors="ignore").strip()
-                process_log(source_ip, raw_syslog)
+                queue_log(source_ip, raw_syslog)
             except socket.timeout:
                 continue
     finally:

@@ -16,10 +16,14 @@ _agent_lock = threading.Lock()
 _agent_timer: threading.Timer | None = None
 
 # DB writer settings
-_DB_BATCH_SIZE = 50
-_DB_FLUSH_INTERVAL = 2.0  # seconds
+_DB_BATCH_SIZE = 100
+_DB_FLUSH_INTERVAL = 120.0  # 2 minutes
 
 _work_queue: queue.Queue = queue.Queue()
+
+# Queue to offload syslog parsing from the UDP thread
+_raw_logs_queue: queue.Queue = queue.Queue()
+_ingest_num_threads = 4  # Can adjust based on deployment size
 
 # ---------------------------------------------------------------------------
 # Agent batch helpers
@@ -99,8 +103,26 @@ def _db_writer() -> None:
     conn.close()
 
 # ---------------------------------------------------------------------------
+# Ingestion Workers
+# ---------------------------------------------------------------------------
+def _ingest_worker() -> None:
+    while True:
+        try:
+            item = _raw_logs_queue.get()
+            if item is None:
+                break
+            source_ip, raw_syslog = item
+            process_log(source_ip, raw_syslog)
+        except Exception as e:
+            print(f"[pipeline] process log error: {e}")
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+def queue_log(source_ip: str, raw_syslog: str) -> None:
+    """Non-blocking function to accept a raw log and queue it for processing."""
+    _raw_logs_queue.put((source_ip, raw_syslog))
+
 def process_log(source_ip: str, raw_syslog: str) -> dict:
     received_at = datetime.now().isoformat()
     result = normalize_log(source_ip, raw_syslog)
@@ -140,8 +162,14 @@ def start_pipeline() -> None:
     _reset_agent_timer()
     t = threading.Thread(target=_db_writer, name="db-writer", daemon=True)
     t.start()
+    
+    for i in range(_ingest_num_threads):
+        worker = threading.Thread(target=_ingest_worker, name=f"ingest-worker-{i}", daemon=True)
+        worker.start()
+        
     print(
         f"[pipeline] started — "
         f"agent batch={_AGENT_BATCH_SIZE} flush={_AGENT_FLUSH_INTERVAL}s | "
-        f"db batch={_DB_BATCH_SIZE} flush={_DB_FLUSH_INTERVAL}s"
+        f"db batch={_DB_BATCH_SIZE} flush={_DB_FLUSH_INTERVAL}s | "
+        f"ingest workers={_ingest_num_threads}"
     )
