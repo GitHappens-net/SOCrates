@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - CHOKIDAR_USEPOLLING=true # Useful for Vite dev server hot-reload in Docker
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+      - "514:514/udp" # Syslog UDP
+    volumes:
+      - ./backend:/app/backend
+      - ./data/datasets:/app/data/datasets:ro
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - SYSLOG_HOST=0.0.0.0
+      - SYSLOG_PORT=514
+    depends_on:
+      - tools # Assuming backend queries the tools REST API, wait for tools
+
+  tools:
+    build:
+      context: . # Build from root to grab backend/requirements.txt
+      dockerfile: tools/Dockerfile
+    ports:
+      - "5050:5050"
+    volumes:
+      - ./tools:/app/tools
+      - ./data/datasets:/app/data/datasets:ro
+    # Adjust --parquet to an existing file when the parquet is ready
+    command: ["python", "-m", "tools.Log_Stream_Generator", "--parquet", "data/datasets/cic-collection.parquet", "--serve", "--port", "5050", "--format", "fortigate", "--speed", "2"]
