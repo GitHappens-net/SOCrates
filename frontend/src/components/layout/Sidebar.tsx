@@ -1,4 +1,4 @@
-import { LayoutDashboard, MonitorDot, Network, History, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, MonitorDot, Network, History } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type ViewId = "dashboard" | "devices" | "logs" | "history";
@@ -23,12 +23,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 flex w-[72px] flex-col items-center gap-2 border-r border-gray-200 bg-white py-5">
-      {/* Logo */}
-      <div className="mb-6 flex h-10 w-10 items-center justify-center rounded-lg border border-black">
-        <ShieldCheck className="h-6 w-6 text-black" />
-      </div>
-
+    <aside className="w-20 bg-gray-100 shrink-0 flex flex-col items-center gap-4 py-5 self-stretch">
       {/* Nav icons */}
       {NAV_ITEMS.map(({ id, icon: Icon, label }) => {
         const active = activeView === id;
@@ -36,18 +31,14 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
           <button
             key={id}
             onClick={() => onNavigate(id)}
-            title={label}
-            className={`group relative flex h-11 w-11 items-center justify-center rounded-lg border transition-colors ${
+            className={`group relative flex h-10 w-10 items-center justify-center rounded-xl border ${
               active
-                ? "border-black bg-black text-white"
-                : "border-transparent text-gray-400 hover:border-gray-300 hover:bg-gray-50 hover:text-black"
+                ? "bg-[#5271ff] border border-[#5271ff] text-white"
+                : "border-transparent text-gray-700 hover:border-2 hover:border-gray-700 hover:bg-gray-200"
             }`}
+            title={label}
           >
             <Icon className="h-5 w-5" />
-            {/* Tooltip */}
-            <span className="pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded border border-black bg-white px-2.5 py-1 text-xs text-black opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-              {label}
-            </span>
           </button>
         );
       })}

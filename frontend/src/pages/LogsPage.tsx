@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { MonitorDot, ChevronDown, ChevronUp } from "lucide-react";
-import { useLogs } from "../hooks/useApiData";
-import type { ApiLog } from "../api/types";
+import { useLogs } from "@/hooks/useApiData";
+import type { ApiLog } from "@/api/types";
 
 /* Severity helpers */
 function sevLabel(n: number): string {
@@ -104,28 +104,96 @@ function LogRow({ log }: { log: ApiLog }) {
 }
 
 /* Main Logs View */
-export default function LogsView() {
-  const { logs, loading } = useLogs(200, 5000);
+export default function LogsPage() {
+  const [filterSeverity, setFilterSeverity] = useState<string>("all");
+  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+  const [limit, setLimit] = useState<number>(200);
+
+  const { logs, loading } = useLogs(limit, 5000);
+
+  // Filter logs
+  const filteredLogs = logs.filter((log) => {
+    if (filterSeverity === "all") return true;
+    return sevLabel(log.severity) === filterSeverity;
+  });
+
+  // Sort logs
+  const sortedLogs = [...filteredLogs].sort((a, b) => {
+    const timeA = new Date(a.received_at).getTime();
+    const timeB = new Date(b.received_at).getTime();
+    if (sortOrder === "asc") return timeA - timeB;
+    return timeB - timeA;
+  });
 
   return (
-    <div className="flex flex-1 flex-col rounded-lg border border-black bg-white">
-      {/* Title */}
-      <div className="flex items-center gap-2 border-b border-gray-200 px-5 py-3">
-        <MonitorDot className="h-4 w-4 text-blue-600" />
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
-          All Logs
-        </h3>
-        <span className="ml-auto flex items-center gap-1.5 text-xs text-green-600">
-          <span className="h-2 w-2 rounded-full bg-green-600" />
-          {loading ? "Loading..." : `${logs.length} logs`}
-        </span>
+    <div className="flex flex-1 flex-col rounded-xl border-2 border-gray-700 bg-white">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-4 border-b border-gray-200 px-5 py-3">
+        <div className="flex items-center gap-2">
+          <MonitorDot className="h-5 w-5 text-[#5271ff]" />
+          <h3 className="text-md font-unica font-semibold uppercase tracking-wider text-gray-700">
+            All Logs
+          </h3>
+        </div>
+
+        <div className="ml-auto flex items-center gap-4 text-xs text-gray-700">
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="severity" className="font-medium">Severity:</label>
+            <select
+              id="severity"
+              className="rounded-lg border-2 border-gray-300 px-2 py-1 focus:border-gray-700 focus:outline-none"
+              value={filterSeverity}
+              onChange={(e) => setFilterSeverity(e.target.value)}
+            >
+              <option value="all">All</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="limit" className="font-medium">Show:</label>
+            <select
+              id="limit"
+              className="rounded-lg border-2 border-gray-300 px-2 py-1 focus:border-gray-700 focus:outline-none"
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
+            >
+              <option value={50}>Last 50</option>
+              <option value={100}>Last 100</option>
+              <option value={200}>Last 200</option>
+              <option value={500}>Last 500</option>
+              <option value={1000}>Last 1000</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="sort" className="font-medium">Time:</label>
+            <select
+              id="sort"
+              className="rounded-lg border-2 border-gray-300 px-2 py-1 focus:border-gray-700 focus:outline-none"
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as "desc" | "asc")}
+            >
+              <option value="desc">Newest First (Desc)</option>
+              <option value="asc">Oldest First (Asc)</option>
+            </select>
+          </div>
+
+          <span className="flex items-center gap-1.5 ml-4 font-bold text-green-700">
+            <span className={`h-3 w-3 rounded-full ${loading ? 'bg-amber-500' : 'bg-green-600'}`} />
+            {loading ? "Loading..." : `${sortedLogs.length} logs`}
+          </span>
+        </div>
       </div>
 
       {/* Table */}
       <div className="flex-1 overflow-y-auto">
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-10 bg-white">
-            <tr className="border-b border-gray-200 text-left text-gray-500">
+            <tr className="border-b border-gray-200 text-left text-gray-500 shadow-sm">
               <th className="px-5 py-2.5 font-medium">Timestamp</th>
               <th className="px-3 py-2.5 font-medium">Source IP</th>
               <th className="px-3 py-2.5 font-medium">Vendor</th>
@@ -136,7 +204,7 @@ export default function LogsView() {
             </tr>
           </thead>
           <tbody>
-            {logs.map((log) => (
+            {sortedLogs.map((log) => (
               <LogRow key={log.id} log={log} />
             ))}
           </tbody>

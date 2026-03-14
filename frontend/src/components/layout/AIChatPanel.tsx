@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { BotMessageSquare, Send, Trash2, ShieldAlert, CheckCircle2, XCircle } from "lucide-react";
-import { sendChat, clearChat } from "../api/client";
+import { Bot, Send, Trash2, ShieldAlert, CheckCircle2, XCircle } from "lucide-react";
+import { sendChat, clearChat } from "@/api/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -55,7 +55,9 @@ function normalizeAssistantMarkdown(input: string): string {
   let text = input
     .replace(/\\r\\n/g, "\n")
     .replace(/\\n/g, "\n")
-    .replace(/\\t/g, "\t");
+    .replace(/\\t/g, "\t")
+    // Squash multiple empty lines into a single blank line
+    .replace(/\n{3,}/g, "\n\n");
 
   // If headers were escaped (\#), unescape them.
   text = text.replace(/(^|\n)\\#/g, "$1#");
@@ -138,31 +140,31 @@ function ChatBubble({ msg, onQuickReply }: { msg: ChatMsg; onQuickReply: (text: 
   }
 
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[85%] rounded-lg px-4 py-2.5 text-sm leading-relaxed ${
-          isUser ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-900"
+        className={`max-w-[92%] rounded-[20px] px-4 py-2.5 text-sm leading-relaxed break-words overflow-hidden ${
+          isUser ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-900"
         }`}
       >
         {isUser ? (
           <p className="whitespace-pre-wrap">{normalized}</p>
         ) : (
-          <div className="chat-markdown">
+          <div className="chat-markdown w-full min-w-0">
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkBreaks]}
               components={{
-                h1: ({ children }) => <h1 className="text-[1.05rem] font-bold">{children}</h1>,
-                h2: ({ children }) => <h2 className="text-[1rem] font-bold">{children}</h2>,
-                h3: ({ children }) => <h3 className="text-[0.95rem] font-bold">{children}</h3>,
-                p: ({ children }) => <p className="my-2">{children}</p>,
-                ul: ({ children }) => <ul className="my-2 list-disc pl-5">{children}</ul>,
-                ol: ({ children }) => <ol className="my-2 list-decimal pl-5">{children}</ol>,
-                li: ({ children }) => <li className="my-1">{children}</li>,
+                h1: ({ children }) => <h1 className="text-[1.05rem] font-bold mt-3 mb-1">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-[1rem] font-bold mt-3 mb-1">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-[0.95rem] font-bold mt-2 mb-1">{children}</h3>,
+                p: ({ children }) => <p className="mb-2 mt-1 last:mb-0 leading-snug">{children}</p>,
+                ul: ({ children }) => <ul className="mb-2 mt-1 list-disc pl-5 overflow-hidden">{children}</ul>,
+                ol: ({ children }) => <ol className="mb-2 mt-1 list-decimal pl-5 overflow-hidden">{children}</ol>,
+                li: ({ children }) => <li className="my-0.5 break-words leading-snug">{children}</li>,
                 pre: ({ children }) => (
-                  <pre className="my-2 overflow-x-auto rounded bg-gray-900 p-3 text-gray-100">{children}</pre>
+                  <pre className="my-2 max-w-full overflow-x-auto rounded bg-gray-900 p-3 text-gray-100">{children}</pre>
                 ),
                 code: ({ children, className }) => (
-                  <code className={`text-[12px] ${className ?? ""}`}>{children}</code>
+                  <code className={`text-[12px] break-words ${className ?? ""}`}>{children}</code>
                 ),
               }}
             >
@@ -193,17 +195,32 @@ function ThinkingIndicator() {
 
 /* Main AI Chat Panel */
 export default function AIChatPanel() {
-  const [messages, setMessages] = useState<ChatMsg[]>([
-    {
-      id: 1,
-      role: "assistant",
-      content:
-        "SOCrates AI Agent online. I have access to the full log and alert database. Ask me anything about your network security.",
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMsg[]>(() => {
+    const saved = sessionStorage.getItem("ai_chat_messages");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // ignore
+      }
+    }
+    return [
+      {
+        id: 1,
+        role: "assistant",
+        content: "Ask me anything about your network security.",
+      }
+    ];
+  });
+
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  /* Persist to session storage */
+  useEffect(() => {
+    sessionStorage.setItem("ai_chat_messages", JSON.stringify(messages));
+  }, [messages]);
 
   /* Auto-scroll to bottom */
   useEffect(() => {
@@ -211,6 +228,25 @@ export default function AIChatPanel() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isThinking]);
+
+  /* Listen for pre-fill events from other parts of the app */
+  useEffect(() => {
+    const handleSetTarget = (e: Event) => {
+      const customEvent = e as CustomEvent<string | null>;
+      const ip = customEvent.detail;
+      
+      setInput((prev) => {
+        // Strip out any existing "Target Device: <ip>\n" prefix so they don't stack up
+        let next = prev.replace(/^Target Device: [^\n]+\n*/gm, "").trimStart();
+        if (ip) {
+          next = `Target Device: ${ip}\n${next}`;
+        }
+        return next;
+      });
+    };
+    window.addEventListener("CHAT_SET_TARGET", handleSetTarget);
+    return () => window.removeEventListener("CHAT_SET_TARGET", handleSetTarget);
+  }, []);
 
   async function sendMessage(text: string): Promise<void> {
     if (!text.trim() || isThinking) return;
@@ -231,7 +267,7 @@ export default function AIChatPanel() {
       const errMsg: ChatMsg = {
         id: Date.now() + 1,
         role: "assistant",
-        content: "Sorry, I couldn't reach the backend. Make sure the server is running.",
+        content: "Sorry, but I couldn't responed to your message, something went wrong.",
       };
       setMessages((prev) => [...prev, errMsg]);
     } finally {
@@ -257,7 +293,7 @@ export default function AIChatPanel() {
       {
         id: Date.now(),
         role: "assistant",
-        content: "Chat cleared. How can I help?",
+        content: "Chat cleared.",
       },
     ]);
   }
@@ -270,28 +306,27 @@ export default function AIChatPanel() {
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border border-black bg-white">
+    <div className="flex h-full flex-col w-full rounded-xl border-2 border-gray-700 bg-gray-100">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-black px-4 py-3">
+      <div className="flex items-center justify-between border-b border-gray-300 px-4 py-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded border border-black">
-            <BotMessageSquare className="h-4 w-4 text-black" />
+          <div className="flex h-8 w-8 items-center justify-center">
+            <Bot className="h-6 w-6 text-gray-700" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-black">SOCrates AI</p>
-            <p className="text-[10px] text-green-600">Online</p>
+            <p className="text-lg font-unica font-semibold tracking-wide text-gray-800">SOCRATES AI</p>
           </div>
         </div>
         <button
           onClick={handleClear}
           title="Clear chat"
-          className="flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-gray-500 transition hover:border-black hover:text-black"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-700 transition hover:text-red-500"
         >
-          <Trash2 className="h-4 w-4" />
+          <Trash2 className="h-5 w-5" />
         </button>
       </div>
 
-      {/* Messages — min-h-0 + flex-1 + overflow-y-auto fixes the scroll bug */}
+      {/* Messages */}
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {messages.map((msg) => (
           <ChatBubble key={msg.id} msg={msg} onQuickReply={handleQuickReply} />
@@ -300,20 +335,20 @@ export default function AIChatPanel() {
       </div>
 
       {/* Input */}
-      <div className="border-t border-gray-200 px-4 py-3">
+      <div className="border-t border-gray-300 px-4 py-3">
         <div className="flex items-center gap-2">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about your network..."
+            placeholder="Ask about anything..."
             disabled={isThinking}
-            className="flex-1 rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-900 outline-none transition focus:border-black disabled:opacity-50"
+            className="flex-1 rounded-xl border border-gray-300 bg-gray-50 px-4 py-2 text-sm text-gray-900 outline-none transition focus:border-gray-700 disabled:opacity-50"
           />
           <button
             onClick={() => void handleSend()}
             disabled={!input.trim() || isThinking}
-            className="flex h-10 w-10 items-center justify-center rounded-lg bg-black text-white transition hover:bg-gray-800 disabled:opacity-30"
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500 text-white transition hover:bg-blue disabled:bg-gray-500"
           >
             <Send className="h-4 w-4" />
           </button>

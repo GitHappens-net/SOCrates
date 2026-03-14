@@ -5,7 +5,7 @@ interface DataCtx {
   toggleMock: () => void;
 }
 
-const DataContext = createContext<DataCtx>({ useMock: false, toggleMock: () => {} });
+export const DataContext = createContext<DataCtx>({ useMock: false, toggleMock: () => {} });
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [useMock, setUseMock] = useState(false);

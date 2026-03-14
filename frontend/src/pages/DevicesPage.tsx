@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Network, MonitorDot, ChevronRight } from "lucide-react";
-import { useDevices, useDeviceLogs } from "../hooks/useApiData";
-import type { ApiDevice, ApiLog } from "../api/types";
+import { useDevices, useDeviceLogs } from "@/hooks/useApiData";
+import { getVendorColor } from "@/utils/colors";
+import type { ApiDevice, ApiLog } from "@/api/types";
 
 /* Node layout helpers */
 const VENDOR_COLORS: Record<string, string> = {
@@ -65,17 +66,46 @@ interface NodePos {
 
 function layoutNodes(devices: ApiDevice[], width: number, height: number): NodePos[] {
   if (devices.length === 0) return [];
-  const cx = width / 2;
-  const cy = height / 2;
-  if (devices.length === 1) return [{ device: devices[0], x: cx, y: cy }];
+  
+  // Calculate grid dimensions to make it roughly square
+  const cols = Math.ceil(Math.sqrt(devices.length));
+  const rows = Math.ceil(devices.length / cols);
+  
+  // Padding from the edges of the SVG canvas
+  const paddingX = 80;
+  const paddingY = 80;
+  
+  // Usable area for the grid
+  const usableWidth = width - (paddingX * 2);
+  const usableHeight = height - (paddingY * 2);
 
-  const radius = Math.min(width, height) * 0.35;
+  // Spacing between columns and rows
+  const spacingX = cols > 1 ? usableWidth / (cols - 1) : 0;
+  const spacingY = rows > 1 ? usableHeight / (rows - 1) : 0;
+  
+  // If only 1 node, center it
+  if (devices.length === 1) {
+    return [{ device: devices[0], x: width / 2, y: height / 2 }];
+  }
+
   return devices.map((device, i) => {
-    const angle = (2 * Math.PI * i) / devices.length - Math.PI / 2;
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+
+    // X coordinates expand out, centered if cols == 1
+    const x = cols > 1 
+      ? paddingX + col * spacingX 
+      : width / 2;
+
+    // Y coordinates expand down, centered if rows == 1
+    const y = rows > 1 
+      ? paddingY + row * spacingY 
+      : height / 2;
+
     return {
       device,
-      x: cx + radius * Math.cos(angle),
-      y: cy + radius * Math.sin(angle),
+      x,
+      y,
     };
   });
 }
@@ -93,64 +123,86 @@ function NetworkMap({ devices, selected, onSelect }: MapProps) {
   const nodes = useMemo(() => layoutNodes(devices, W, H), [devices]);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full">
-      {/* Connection lines (all-to-all for simplicity) */}
-      {nodes.map((a, i) =>
-        nodes.slice(i + 1).map((b) => (
-          <line
-            key={`${a.device.ip}-${b.device.ip}`}
-            x1={a.x}
-            y1={a.y}
-            x2={b.x}
-            y2={b.y}
-            stroke="#e5e7eb"
-            strokeWidth={1.5}
-          />
-        )),
-      )}
-
+    <svg 
+      viewBox={`0 0 ${W} ${H}`} 
+      className="h-full w-full"
+      onClick={() => onSelect("")} // clicking the canvas clears selection
+    >
       {/* Nodes */}
       {nodes.map(({ device, x, y }) => {
         const isSelected = device.ip === selected;
-        const fill = vendorColor(device.vendor);
+        const fill = getVendorColor(device.vendor);
         return (
           <g
             key={device.ip}
-            className="cursor-pointer"
-            onClick={() => onSelect(device.ip)}
+            className="cursor-pointer transition-transform duration-200"
+            style={{ 
+              transform: isSelected ? `translate(${x}px, ${y}px) scale(1.05)` : `translate(${x}px, ${y}px)`,
+              transformOrigin: "0 0" 
+            }}
+            onClick={(e) => {
+              e.stopPropagation(); // prevent canvas click from clearing selection
+              onSelect(device.ip);
+            }}
           >
-            {/* Pulse ring when selected */}
-            {isSelected && (
-              <circle cx={x} cy={y} r={30} fill="none" stroke={fill} strokeWidth={2} opacity={0.3}>
-                <animate attributeName="r" from="24" to="36" dur="1.2s" repeatCount="indefinite" />
-                <animate attributeName="opacity" from="0.4" to="0" dur="1.2s" repeatCount="indefinite" />
-              </circle>
-            )}
-            <circle
-              cx={x}
-              cy={y}
-              r={22}
-              fill={isSelected ? fill : "white"}
-              stroke={fill}
-              strokeWidth={isSelected ? 3 : 2}
+            {/* Box shadow effect */}
+            <rect
+              x={-50}
+              y={-22}
+              width={100}
+              height={44}
+              rx={8}
+              fill="#000"
+              opacity={isSelected ? 0.15 : 0.05}
+              transform="translate(2, 4)"
             />
+            {/* Main rect */}
+            <rect
+              x={-50}
+              y={-22}
+              width={100}
+              height={44}
+              rx={8}
+              fill="white"
+              stroke={isSelected ? fill : "#e2e8f0"}
+              strokeWidth={isSelected ? 2 : 1}
+            />
+            {/* Vendor accent line */}
+            <rect
+              x={-50}
+              y={-22}
+              width={6}
+              height={44}
+              rx={8}
+              fill={fill}
+            />
+            {/* Fix straight edge on right side of accent line to merge cleanly */}
+            <rect
+              x={-47}
+              y={-22}
+              width={3}
+              height={44}
+              fill={fill}
+            />
+            
+            {/* Hostname */}
             <text
-              x={x}
-              y={y + 1}
-              textAnchor="middle"
-              dominantBaseline="central"
-              className="pointer-events-none select-none text-[10px] font-bold"
-              fill={isSelected ? "white" : fill}
+              x={-34}
+              y={-4}
+              textAnchor="start"
+              className="pointer-events-none select-none text-[11px] font-bold"
+              fill="#1e293b"
             >
-              {device.hostname ? device.hostname.slice(0, 6) : device.ip.split(".").pop()}
+              {device.hostname ? device.hostname.slice(0, 10) : device.ip.split(".").pop()}
             </text>
-            {/* Label below */}
+            
+            {/* IP Address inside node */}
             <text
-              x={x}
-              y={y + 36}
-              textAnchor="middle"
-              className="pointer-events-none select-none text-[9px]"
-              fill="#6b7280"
+              x={-34}
+              y={10}
+              textAnchor="start"
+              className="pointer-events-none select-none text-[9px] font-mono"
+              fill="#64748b"
             >
               {device.ip}
             </text>
@@ -204,12 +256,24 @@ function DeviceLogTable({ logs, loading }: { logs: ApiLog[]; loading: boolean })
 }
 
 /* Main Devices View */
-export default function DevicesView() {
+export default function DevicesPage() {
   const { devices, loading } = useDevices();
   const [selectedIp, setSelectedIp] = useState<string | null>(null);
   const { logs: deviceLogs, loading: logsLoading } = useDeviceLogs(selectedIp);
 
   const selectedDevice = devices.find((d) => d.ip === selectedIp);
+
+  function handleSelectDevice(ip: string | null) {
+    setSelectedIp(ip);
+    window.dispatchEvent(new CustomEvent("CHAT_SET_TARGET", { detail: ip }));
+  }
+
+  // Clear target context on unmount or navigation
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(new CustomEvent("CHAT_SET_TARGET", { detail: null }));
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -222,28 +286,34 @@ export default function DevicesView() {
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
       {/* Network map card */}
-      <div className="rounded-lg border border-black bg-white p-5">
+      <div className="rounded-xl border-2 border-gray-700 bg-white p-5">
         <div className="mb-3 flex items-center gap-2">
-          <Network className="h-4 w-4 text-blue-600" />
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+          <Network className="h-5 w-5 text-[#5271ff]" />
+          <h3 className="text-md font-unica font-semibold uppercase tracking-wider text-gray-700">
             Network Topology
           </h3>
-          <span className="ml-auto text-xs text-gray-400">{devices.length} devices</span>
         </div>
-        <div className="flex aspect-[5/3] items-center justify-center">
+        <div
+          className="flex aspect-[6/3] items-center justify-center rounded-lg border-2 border-gray-300 bg-slate-50"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, rgba(148,163,184,0.2) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.2) 1px, transparent 1px)",
+            backgroundSize: "28px 28px",
+          }}
+        >
           {devices.length === 0 ? (
             <p className="text-sm text-gray-400">No devices discovered yet.</p>
           ) : (
-            <NetworkMap devices={devices} selected={selectedIp} onSelect={setSelectedIp} />
+            <NetworkMap devices={devices} selected={selectedIp} onSelect={handleSelectDevice} />
           )}
         </div>
       </div>
 
       {/* Device detail + logs */}
       {selectedDevice && (
-        <div className="rounded-lg border border-black bg-white">
+        <div className="rounded-xl border-2 border-gray-700 bg-white">
           <div className="flex items-center gap-2 border-b border-gray-200 px-5 py-3">
-            <MonitorDot className="h-4 w-4" style={{ color: vendorColor(selectedDevice.vendor) }} />
+            <MonitorDot className="h-4 w-4" style={{ color: getVendorColor(selectedDevice.vendor) }} />
             <h3 className="text-sm font-semibold text-gray-800">
               {selectedDevice.hostname ?? selectedDevice.ip}
             </h3>
