@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   frontend:
     build:
@@ -9,6 +7,7 @@ services:
       - "5173:5173"
     environment:
       - CHOKIDAR_USEPOLLING=true # Useful for Vite dev server hot-reload in Docker
+      - VITE_BACKEND_URL=http://backend:8000
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -40,5 +39,4 @@ services:
     volumes:
       - ./tools:/app/tools
       - ./data/datasets:/app/data/datasets:ro
-    # Adjust --parquet to an existing file when the parquet is ready
-    command: ["python", "-m", "tools.Log_Stream_Generator", "--parquet", "data/datasets/cic-collection.parquet", "--serve", "--port", "5050", "--format", "fortigate", "--speed", "2"]
+    command: ["python", "-m", "tools.Log_Stream_Generator", "--parquet", "data/datasets/CIC-IDS-Collection.parquet", "--syslog", "--syslog-host", "backend", "--max-flows", "100", "--format", "fortigate", "--speed", "2"]
