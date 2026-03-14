@@ -4,7 +4,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "5173:5173"
+      - "5173:5174"
     environment:
       - CHOKIDAR_USEPOLLING=true # Useful for Vite dev server hot-reload in Docker
       - VITE_BACKEND_URL=http://backend:8000
