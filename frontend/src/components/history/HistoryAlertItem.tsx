@@ -1,12 +1,5 @@
 import { useState } from "react";
-import {
-  ShieldAlert,
-  ChevronDown,
-  ChevronUp,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-} from "lucide-react";
+import { ShieldAlert, ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 import { patchAlertStatus } from "@/api/client";
 import type { ApiAlert } from "@/api/types";
 
@@ -39,9 +32,9 @@ export default function HistoryAlertItem({ alert, onStatusChange }: HistoryAlert
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white">
+    <div className="rounded-xl border-2 border-gray-700 bg-white">
       <button
-        className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-gray-50"
+        className="flex w-full items-center gap-3 px-5 py-3 text-left"
         onClick={() => setOpen((v) => !v)}
       >
         <StatusIcon
@@ -49,20 +42,15 @@ export default function HistoryAlertItem({ alert, onStatusChange }: HistoryAlert
             alert.severity === "critical" || alert.severity === "high"
               ? "text-red-600"
               : alert.severity === "medium"
-              ? "text-amber-600"
+              ? "text-orange-400"
               : "text-green-600"
           }`}
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-gray-900">{alert.title}</p>
+          <p className="truncate text-md font-semibold text-gray-900">{alert.title}</p>
           <p className="truncate text-xs text-gray-500">{alert.summary}</p>
         </div>
-        <span
-          className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ${SEV_CLASSES[alert.severity] ?? SEV_CLASSES.medium}`}
-        >
-          {alert.severity}
-        </span>
-        <span className="shrink-0 rounded bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+        <span className="shrink-0 rounded-full bg-gray-200 px-2 py-0.5 text-[12px] font-bold text-gray-700 font-unica">
           {alert.status}
         </span>
         <span className="shrink-0 text-[10px] text-gray-400">{alert.created_at}</span>
@@ -75,34 +63,23 @@ export default function HistoryAlertItem({ alert, onStatusChange }: HistoryAlert
 
       {open && (
         <div className="border-t border-gray-100 px-5 py-4">
-          <h4 className="mb-1 text-xs font-bold uppercase tracking-wider text-gray-500">AI Analysis</h4>
+          <h4 className="mb-1 text-md font-unica font-bold uppercase tracking-wider text-gray-700">AI Analysis</h4>
           <p className="mb-4 whitespace-pre-wrap text-sm leading-relaxed text-gray-800">{alert.analysis}</p>
 
           {alert.mitigations.length > 0 && (
             <>
-              <h4 className="mb-1 text-xs font-bold uppercase tracking-wider text-gray-500">
+              <h4 className="mb-1 text-md font-unica font-bold uppercase tracking-wider text-gray-700">
                 Recommended Mitigations
               </h4>
               <ul className="mb-4 space-y-2">
                 {alert.mitigations.map((m, i) => (
-                  <li key={i} className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs">
+                  <li key={i} className="rounded-xl border-2 border-gray-300 bg-gray-50 px-3 py-2 text-xs">
                     <p className="font-medium text-gray-800">{m.description}</p>
                     {m.command !== "N/A" && (
-                      <code className="mt-1 block break-all rounded bg-gray-200 px-2 py-1 text-[10px] text-gray-700">
+                      <code className="mt-1 block break-all rounded-lg bg-gray-200 px-2 py-1 text-[11px] text-gray-700">
                         {m.command}
                       </code>
                     )}
-                    <span
-                      className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                        m.risk === "low"
-                          ? "bg-green-100 text-green-700"
-                          : m.risk === "medium"
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-red-100 text-red-700"
-                      }`}
-                    >
-                      risk: {m.risk}
-                    </span>
                   </li>
                 ))}
               </ul>
@@ -111,12 +88,12 @@ export default function HistoryAlertItem({ alert, onStatusChange }: HistoryAlert
 
           {alert.affected_devices.length > 0 && (
             <div className="mb-4">
-              <h4 className="mb-1 text-xs font-bold uppercase tracking-wider text-gray-500">Affected Devices</h4>
+              <h4 className="mb-1 text-md font-unica font-bold uppercase tracking-wider text-gray-700">Affected Devices</h4>
               <div className="flex flex-wrap gap-2">
                 {alert.affected_devices.map((ip) => (
                   <span
                     key={ip}
-                    className="rounded border bg-gray-100 px-2 py-0.5 font-mono text-[10px] text-gray-700"
+                    className="rounded-full border-2 bg-gray-100 px-2 py-0.5 font-mono text-[11px] text-gray-700"
                   >
                     {ip}
                   </span>
@@ -125,11 +102,11 @@ export default function HistoryAlertItem({ alert, onStatusChange }: HistoryAlert
             </div>
           )}
 
-          <div className="flex gap-2 border-t border-gray-100 pt-3">
+          <div className="flex gap-2 border-t border-gray-300 pt-3">
             {alert.status !== "acknowledged" && (
               <button
                 onClick={() => changeStatus("acknowledged")}
-                className="rounded border border-blue-600 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100"
+                className="rounded-full border-2 border-[#5271ff] bg-white hover:bg-blue-100 px-3 py-1.5 text-[12px] font-semibold text-[#5271ff]"
               >
                 Acknowledge
               </button>
@@ -137,7 +114,7 @@ export default function HistoryAlertItem({ alert, onStatusChange }: HistoryAlert
             {alert.status !== "resolved" && (
               <button
                 onClick={() => changeStatus("resolved")}
-                className="rounded border border-green-600 bg-green-50 px-3 py-1.5 text-[11px] font-semibold text-green-700 transition hover:bg-green-100"
+                className="rounded-full border-2 border-green-600 bg-white hover:bg-green-100 px-3 py-1.5 text-[12px] font-semibold text-green-700"
               >
                 Resolve
               </button>
@@ -145,7 +122,7 @@ export default function HistoryAlertItem({ alert, onStatusChange }: HistoryAlert
             {alert.status !== "dismissed" && (
               <button
                 onClick={() => changeStatus("dismissed")}
-                className="rounded border border-gray-300 bg-gray-50 px-3 py-1.5 text-[11px] font-semibold text-gray-600 transition hover:bg-gray-100"
+                className="rounded-full border-2 border-gray-700 bg-white hover:bg-gray-200 px-3 py-1.5 text-[12px] font-semibold text-gray-700"
               >
                 Dismiss
               </button>
