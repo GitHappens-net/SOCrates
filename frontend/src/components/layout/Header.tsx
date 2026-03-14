@@ -11,7 +11,7 @@ export default function Header() {
       {/* Left — branding */}
       <div className="flex items-center gap-3">
         <h1 className="font-unica text-4xl font-semibold text-blue-600 tracking-wide mt-1 flex items-center gap-6">
-          <img className="-ml-[6px] h-12 w-12" src="./icon.svg" alt="SOCrates Logo" />
+          <img className="-ml-[6px] h-12 w-12" src="/icon.svg" alt="SOCrates Logo" />
           <span>SOC<span className="text-black">RATES</span></span>
         </h1>
       </div>
