@@ -69,7 +69,7 @@ python -m backend.main
 ```
 
 This starts three subsystems in one process:
-1. **Pipeline** — DB writer thread + agent analysis queue
+1. **Pipeline** — DB writer thread + analysis queue
 2. **REST API** — Flask on `API_HOST:API_PORT` (background thread)
 3. **Syslog UDP listener** — `SYSLOG_HOST:SYSLOG_PORT` (main thread)
 
@@ -138,24 +138,31 @@ Three-stage log parsing:
 
 | Stage | Method | Details |
 |-------|--------|---------|
-| 1 | **Fingerprint** | Regex heuristics to classify logs (FortiGate kv, Cisco IOS, Linux syslog) |
+| 1 | **Fingerprint** | Vendor detectors classify logs (FortiGate kv, Cisco IOS, Cisco ASA 8.4(2), Palo Alto CSV traffic, Linux syslog) |
 | 2 | **Built-in templates** | Hardcoded regex/kv patterns for known vendors — zero API calls |
 | 3 | **AI fallback** | Sends unknown formats to GPT-4.1 to generate a parsing template (regex or kv), which is persisted to the DB for future use |
 
 Built-in templates:
 - **FortiGate** (`kv` mode) — `date=YYYY-MM-DD time=... devname=...` key-value format
 - **Cisco IOS** (`regex` mode) — `%FACILITY-SEVERITY-MNEMONIC:` syslog format
+- **Cisco ASA 8.4(2)** (`regex` mode) — `%ASA-SEVERITY-MESSAGE_ID:` syslog format
+- **Palo Alto traffic CSV** (`csv` mode) — parser prototype for logs shaped like `tools/Log_Stream_Generator/format_paloalto.py`
 - **Linux syslog** (`regex` mode) — Standard `<PRI>Mon DD HH:MM:SS hostname process[pid]:` format
 
 AI-generated templates are cached in the `templates` table and loaded on startup.
 
+Vendor-specific built-ins and enrichers are grouped under:
+- `services/vendors/fortigate.py`
+- `services/vendors/cisco.py`
+- `services/vendors/paloalto.py`
+
 ### `services/pipeline.py` — Ingestion Pipeline
 
 - **DB writer thread**: Owns a single persistent SQLite connection. Batches logs (50) and flushes every 2 seconds via `executemany`.
-- **Agent queue**: Collects normalized logs. Triggers analysis at 100 logs or 5-minute timeout.
+- **Analysis queue**: Collects normalized logs. Triggers analysis at 100 logs or 5-minute timeout.
 - **Device tracker**: Auto-upserts device records (IP, hostname, vendor, type) with every batch.
 
-### `agent/analyzer.py` — Two-Tier AI Analysis
+### `analysis/analyzer.py` — Two-Tier AI Analysis
 
 | Tier | Model | Purpose | Input | Output |
 |------|-------|---------|-------|--------|
@@ -166,7 +173,7 @@ Token efficiency: `_compact_log()` strips each log to ~15 security-relevant fiel
 
 If Tier-2 fails, the triage finding is stored directly as a "triage-only" alert.
 
-### `agent/chat.py` — Interactive SOC Chat
+### `analysis/chat.py` — Interactive SOC Chat
 
 GPT-5.1-powered conversational interface. Each turn:
 1. Rebuilds system prompt with **live context** (devices, last 25 alerts, log stats)

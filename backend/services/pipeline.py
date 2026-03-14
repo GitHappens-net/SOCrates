@@ -3,9 +3,9 @@ import threading
 import time
 from datetime import datetime
 
-from agent.analyzer import analyze_batch_async
-from database.db import get_connection, init_db, insert_logs_batch, upsert_devices_batch
-from services.normalizer import normalize_log, init_templates
+from ..analysis.analyzer import analyze_batch_async
+from ..database.db import get_connection, init_db, insert_logs_batch, upsert_devices_batch
+from .normalizer import normalize_log, init_templates
 
 # Agent batch settings
 _AGENT_BATCH_SIZE = 100

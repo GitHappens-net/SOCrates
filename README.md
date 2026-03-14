@@ -41,10 +41,9 @@ API_PORT=5000
 ---
 
 ## Running
-
-**Start the parser + API** (from project root):
+**Start the backend** (from project root):
 ```powershell
-python -m backend.services.parser
+python -m backend.main
 ```
 
 This starts:
@@ -54,9 +53,7 @@ This starts:
 
 **Simulate logs** (separate terminal, from project root):
 ```powershell
-python -m tools.Log_Stream_Generator `
-  --parquet data\cic-collection.parquet `
-  --syslog --max-flows 1000 --speed 1
+python -m tools.Log_Stream_Generator --parquet data\cic-collection.parquet --syslog --max-flows 1000 --speed 1
 ```
 
 `--format` defaults to `fortigate`. Use `--format paloalto` for PaloAlto logs.

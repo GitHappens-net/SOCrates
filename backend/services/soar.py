@@ -3,7 +3,7 @@ import ipaddress
 from dataclasses import dataclass
 import requests
 
-from config import (
+from ..config import (
     FORTIGATE_API_TOKEN,
     SOAR_AUTO_RESPONSE_ENABLED,
     SOAR_AUTO_RESPONSE_MIN_SEVERITY,
@@ -12,7 +12,8 @@ from config import (
     FORTIGATE_VERIFY_SSL,
 )
 
-from database.db import create_soar_action, get_device, get_fortigate_devices, update_soar_action_result
+from ..database.db import create_soar_action, get_device, get_fortigate_devices, update_soar_action_result
+
 
 class SoarError(Exception):
     pass

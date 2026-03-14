@@ -2,26 +2,17 @@ import hashlib
 import json
 import re
 import time
+from csv import reader as csv_reader
 
-from config import OPENAI_CLIENT, OPENAI_MODEL_PARSER
-from database.db import load_templates, save_template
+from ..config import OPENAI_CLIENT, OPENAI_MODEL_PARSER
+from ..database.db import load_templates, save_template
+from .vendors import BUILTIN_TEMPLATES, detect_fingerprint, enrich_vendor_fields
 
 _OPENAI_CLIENT: object | None = OPENAI_CLIENT
 _OPENAI_MODEL: str = OPENAI_MODEL_PARSER
 
 _TEMPLATES: list[dict] = [
-    {
-        "fingerprint": "cisco_ios_syslog",
-        "vendor": "Cisco",
-        "device_type": "Cisco IOS Router",
-        "regex": (
-            r"<(?P<priority>\d+)>"
-            r"\d+:\s*\*?\s*"
-            r"(?P<log_timestamp>[A-Z][a-z]{2}\s+\d+\s+[\d:\.]+):\s*"
-            r"%(?P<facility>[A-Z0-9]+)-(?P<severity_level>\d+)-(?P<mnemonic>[A-Z0-9_]+):\s*"
-            r"(?P<message>.*)"
-        ),
-    },
+    *BUILTIN_TEMPLATES,
     {
         "fingerprint": "linux_syslog_standard",
         "vendor": "Linux",
@@ -35,23 +26,6 @@ _TEMPLATES: list[dict] = [
             r"(?P<message>.*)"
         ),
     },
-    {
-        # FortiGate logs are purely key=value after the optional syslog priority.
-        # Distinctive markers: date=YYYY-MM-DD, devname=, logid=
-        # All log types (traffic, utm, event, gtp, ...) follow this same format.
-        "fingerprint": "fortigate_kv",
-        "vendor": "Fortinet",
-        "device_type": "FortiGate Firewall",
-        "parse_mode": "kv",
-        # header_regex captures the syslog envelope and names the rest as kvpayload
-        # so _parse_kv() can auto-extract every field (srcip, dstip, action, logid, …)
-        "header_regex": (
-            r"^(?:<(?P<syslog_priority>\d+)>)?\s*"
-            r"(?:[^\s:=]+:\s+)?"
-            r"(?P<kvpayload>date=\d{4}-\d{2}-\d{2}\s+time=\S+.+)"
-        ),
-        "regex": "",  # not used in kv mode
-    },
 ]
 
 _AI_FAILED: dict[str, float] = {}
@@ -59,17 +33,6 @@ _AI_FAILED_TTL: float = 300.0  # retry after 5 minutes
 
 _KV_RE = re.compile(r'(\w+)=("[^"]*"|\S+)')
 
-_CISCO_ACL_RE = re.compile(
-    r"\blist\s+(?P<acl>\S+)\s+"
-    r"(?P<action>permitted|denied)\s+"
-    r"(?P<service>[A-Za-z0-9_\-]+)\s+"
-    r"(?P<srcip>\d+\.\d+\.\d+\.\d+)"
-    r"(?:\([^)]*\))?\s*->\s*"
-    r"(?P<dstip>\d+\.\d+\.\d+\.\d+)",
-    re.IGNORECASE,
-)
-
-_HEARTBEAT_HOST_RE = re.compile(r"\bHEARTBEAT:\s*(?P<hostname>[A-Za-z0-9_.-]+)\b")
 _ARROW_IP_RE = re.compile(
     r"(?P<srcip>\d+\.\d+\.\d+\.\d+)"
     r"(?:\([^)]*\))?\s*->\s*"
@@ -97,16 +60,7 @@ def _extract_priority(raw_syslog: str) -> tuple[int, int]:
 
 # Identify log format by pattern matching
 def _fingerprint(source_ip: str, raw_syslog: str) -> str:
-    # FortiGate: always has date=YYYY-MM-DD and devname= in the same message
-    if re.search(r"date=\d{4}-\d{2}-\d{2}\b", raw_syslog) and re.search(r"\bdevname=", raw_syslog):
-        return "fortigate_kv"
-    if re.search(r"%[A-Z0-9]+-\d+-[A-Z0-9_]+:", raw_syslog):
-        return "cisco_ios_syslog"
-    if re.search(r"<\d+>\d+:\s*\*?[A-Z][a-z]{2}\s+\d+\s+[\d:\.]+:", raw_syslog):
-        return "cisco_ios_debug"
-    if re.search(r"<\d+>[A-Z][a-z]{2}\s+\d+\s+\d+:\d+:\d+\s+\S+\s+\S+", raw_syslog):
-        return "linux_syslog_standard"
-    return f"unknown_{source_ip}"
+    return detect_fingerprint(source_ip, raw_syslog)
 
 # Apply regex template to extract named groups
 def _try_match(pattern: str, text: str) -> dict | None:
@@ -128,29 +82,24 @@ def _parse_kv(raw_syslog: str, header_regex: str | None = None) -> dict | None:
         fields[key] = val.strip('"')
     return fields if fields else None
 
-# Derive action/service/srcip/dstip/hostname from Cisco message text when available.
-def _enrich_cisco_fields(fields: dict) -> dict:
-    message = fields.get("message", "")
-    if not isinstance(message, str) or not message:
-        return fields
 
-    m = _CISCO_ACL_RE.search(message)
-    if m:
-        for key in ("acl", "action", "service", "srcip", "dstip"):
-            val = m.groupdict().get(key)
-            if val and key not in fields:
-                fields[key] = val
+def _parse_csv(raw_syslog: str, fieldnames: list[str], min_columns: int = 0) -> dict | None:
+    # Remove optional syslog priority (<166>) before CSV parsing.
+    payload = re.sub(r"^<\d+>", "", raw_syslog).strip()
+    row = next(csv_reader([payload]), None)
+    if not row:
+        return None
+    if min_columns and len(row) < min_columns:
+        return None
 
-    hm = _HEARTBEAT_HOST_RE.search(message)
-    if hm and hm.group("hostname") and "hostname" not in fields:
-        fields["hostname"] = hm.group("hostname")
-
-    # Heartbeat messages do not include ACL-style action/service; infer them for UI clarity.
-    if "heartbeat" in message.lower():
-        fields.setdefault("action", "heartbeat")
-        fields.setdefault("service", "ha")
-
-    return fields
+    out: dict = {}
+    for idx, col in enumerate(fieldnames):
+        if idx >= len(row):
+            break
+        value = row[idx].strip()
+        if value:
+            out[col] = value
+    return out if out else None
 
 # Vendor-agnostic best-effort enrichment from free-form message text.
 def _enrich_common_message_fields(fields: dict, source_ip: str) -> dict:
@@ -240,13 +189,19 @@ def normalize_log(source_ip: str, raw_syslog: str) -> dict:
     for template in _TEMPLATES:
         if template.get("fingerprint") != fp:
             continue
-        if template.get("parse_mode") == "kv":
+        parse_mode = template.get("parse_mode", "regex")
+        if parse_mode == "kv":
             fields = _parse_kv(raw_syslog, template.get("header_regex"))
+        elif parse_mode == "csv":
+            fields = _parse_csv(
+                raw_syslog,
+                template.get("csv_fieldnames", []),
+                int(template.get("csv_min_columns", 0) or 0),
+            )
         else:
             fields = _try_match(template["regex"], raw_syslog)
         if fields:
-            if template["vendor"] == "Cisco":
-                fields = _enrich_cisco_fields(fields)
+            fields = enrich_vendor_fields(template["vendor"], fields)
             fields = _enrich_common_message_fields(fields, source_ip)
             return {
                 "fields": fields,
@@ -274,6 +229,10 @@ def normalize_log(source_ip: str, raw_syslog: str) -> dict:
         if parse_mode == "kv":
             new_template["header_regex"] = ai.get("header_regex")
             new_template["regex"] = ""  # not used for kv mode
+        elif parse_mode == "csv":
+            new_template["regex"] = ""
+            new_template["csv_fieldnames"] = ai.get("csv_fieldnames", [])
+            new_template["csv_min_columns"] = int(ai.get("csv_min_columns", 0) or 0)
         else:
             new_template["regex"] = ai.get("regex", "")
 
@@ -293,12 +252,17 @@ def normalize_log(source_ip: str, raw_syslog: str) -> dict:
         # Apply the new template
         if parse_mode == "kv":
             fields = _parse_kv(raw_syslog, ai.get("header_regex"))
+        elif parse_mode == "csv":
+            fields = _parse_csv(
+                raw_syslog,
+                ai.get("csv_fieldnames", []),
+                int(ai.get("csv_min_columns", 0) or 0),
+            )
         else:
             fields = _try_match(ai.get("regex", ""), raw_syslog)
         fields = fields or {"raw": raw_syslog}
 
-        if ai.get("vendor", "unknown") == "Cisco":
-            fields = _enrich_cisco_fields(fields)
+        fields = enrich_vendor_fields(ai.get("vendor", "unknown"), fields)
         fields = _enrich_common_message_fields(fields, source_ip)
 
         return {

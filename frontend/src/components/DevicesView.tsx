@@ -9,6 +9,7 @@ const VENDOR_COLORS: Record<string, string> = {
   Cisco:    "#2563eb",
   Linux:    "#16a34a",
   Windows:  "#7c3aed",
+  "Palo Alto": "#ea580c",
 };
 
 function vendorColor(vendor: string): string {

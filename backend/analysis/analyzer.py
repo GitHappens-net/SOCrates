@@ -4,9 +4,9 @@ import json
 import re
 import threading
 
-from config import OPENAI_CLIENT, OPENAI_MODEL_AGENT, OPENAI_MODEL_REASONING
-from database.db import get_alerts, get_devices_list, find_duplicate_alert, insert_alert
-from services.soar import auto_respond_to_alert
+from ..config import OPENAI_CLIENT, OPENAI_MODEL_AGENT, OPENAI_MODEL_REASONING
+from ..database.db import get_alerts, get_devices_list, find_duplicate_alert, insert_alert
+from ..services.soar import auto_respond_to_alert
 
 _CLIENT: object | None = OPENAI_CLIENT
 _MODEL_TRIAGE: str = OPENAI_MODEL_AGENT
