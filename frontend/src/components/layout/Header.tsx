@@ -1,5 +1,5 @@
 import { Wifi, WifiOff, ToggleLeft, ToggleRight } from "lucide-react";
-import { useDataMode } from "@/hooks/useDataMode";
+import { useDataMode } from "@/context/DataContext";
 import { useHealthCheck } from "@/hooks/useApiData";
 
 export default function Header() {
