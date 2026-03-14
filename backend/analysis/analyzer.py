@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import re
 import threading
+from pydantic import BaseModel, Field
+import time
 
 from ..config import OPENAI_CLIENT, OPENAI_MODEL_AGENT, OPENAI_MODEL_REASONING
-from ..database.db import get_alerts, get_devices_list, find_duplicate_alert, insert_alert
+from ..database.db import get_alerts, get_devices_list, find_duplicate_alert, insert_alert, get_recent_logs, get_connection
 from ..services.soar import auto_respond_to_alert
 
 _CLIENT: object | None = OPENAI_CLIENT
@@ -59,14 +61,31 @@ def _format_devices_context(devices: list[dict]) -> str:
         for d in devices
     )
 
-# Best-effort JSON extraction from AI response.
-def _parse_json(text: str) -> dict | None:
-    text = re.sub(r"^```(?:json)?\s*", "", text.strip())
-    text = re.sub(r"\s*```$", "", text)
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return None
+class TriageFinding(BaseModel):
+    severity: str = Field(description="critical|high|medium|low|info")
+    title: str = Field(description="Short descriptive title")
+    summary: str = Field(description="Brief explanation of the concern")
+    related_indices: list[int] = Field(description="Indices of related logs")
+
+class TriageResult(BaseModel):
+    threats_detected: bool
+    findings: list[TriageFinding]
+
+class Mitigation(BaseModel):
+    description: str = Field(description="What to do")
+    command: str = Field(description="Device-specific CLI command (e.g. FortiGate CLI) or 'N/A'")
+    risk: str = Field(description="low|medium|high")
+
+class DeepAnalysisResult(BaseModel):
+    severity: str = Field(description="critical|high|medium|low|info")
+    title: str = Field(description="Refined alert title")
+    analysis: str = Field(description="Detailed explanation of the threat, attack vector, and any correlations with past alerts")
+    mitigations: list[Mitigation]
+    affected_devices: list[str]
+
+class EvaluationResult(BaseModel):
+    attack_stopped: bool
+    reasoning: str
 
 # ---------------------------------------------------------------------------
 # Tier 1: Triage
@@ -83,23 +102,9 @@ Review the log entries below and identify any security concerns such as:
 - Policy violations or lateral movement
 - Any anomalous patterns
 
-For each distinct concern, provide a severity, title, summary, and the indices of related logs.
+If there are security concerns, explain each distinct concern providing severity, title, summary, and indices of related logs in the required JSON format.
 
-Respond with ONLY valid JSON — no markdown, no explanation:
-{
-  "threats_detected": true,
-  "findings": [
-    {
-      "severity": "critical|high|medium|low|info",
-      "title": "Short descriptive title",
-      "summary": "Brief explanation of the concern",
-      "related_indices": [0, 5, 12]
-    }
-  ]
-}
-
-If the logs appear entirely benign, respond:
-{"threats_detected": false, "findings": []}
+If the logs appear entirely benign, set threats_detected to false and provide an empty array for findings.
 
 Logs (each line is one entry, prefixed with index #):
 """
@@ -110,13 +115,14 @@ def _triage_batch(batch: list[dict]) -> dict | None:
         return None
     log_text = _numbered_logs(batch)
     try:
-        resp = _CLIENT.chat.completions.create(
+        resp = _CLIENT.beta.chat.completions.parse(
             model=_MODEL_TRIAGE,
             messages=[{"role": "user", "content": _TRIAGE_PROMPT + log_text}],
+            response_format=TriageResult,
             temperature=0,
             max_tokens=1500,
         )
-        return _parse_json(resp.choices[0].message.content)
+        return resp.choices[0].message.parsed.model_dump()
     except Exception as exc:
         print(f"[analyzer] triage API error: {exc}")
         return None
@@ -141,21 +147,7 @@ Summary: {summary}
 
 ## Device Inventory
 {devices}
-
-Respond with ONLY valid JSON — no markdown, no explanation:
-{{
-  "severity": "critical|high|medium|low|info",
-  "title": "Refined alert title",
-  "analysis": "Detailed explanation of the threat, attack vector, and any correlations with past alerts",
-  "mitigations": [
-    {{
-      "description": "What to do",
-      "command": "Device-specific CLI command (e.g. FortiGate CLI) or 'N/A'",
-      "risk": "low|medium|high"
-    }}
-  ],
-  "affected_devices": ["10.0.0.1"]
-}}"""
+"""
 
 def _deep_analyze(finding: dict, related_logs: list[dict], past_alerts: list[dict], devices: list[dict]) -> dict | None:
     if not _CLIENT:
@@ -169,22 +161,78 @@ def _deep_analyze(finding: dict, related_logs: list[dict], past_alerts: list[dic
         devices=_format_devices_context(devices),
     )
     try:
-        resp = _CLIENT.chat.completions.create(
+        resp = _CLIENT.beta.chat.completions.parse(
             model=_MODEL_REASONING,
             messages=[{"role": "user", "content": prompt}],
-            max_completion_tokens=16000,
+            response_format=DeepAnalysisResult,
         )
-        raw = resp.choices[0].message.content
-        if not raw:
+        parsed = resp.choices[0].message.parsed
+        if not parsed:
             print(f"[analyzer] deep-analysis: empty response (finish_reason={resp.choices[0].finish_reason})")
             return None
-        result = _parse_json(raw)
-        if result is None:
-            print(f"[analyzer] deep-analysis: JSON parse failed on: {raw[:300]}")
-        return result
+        return parsed.model_dump()
     except Exception as exc:
         print(f"[analyzer] deep-analysis API error: {exc}")
         return None
+
+# ---------------------------------------------------------------------------
+# Tier 3: Evaluation Loop
+# ---------------------------------------------------------------------------
+_EVALUATION_PROMPT = """\
+You are a SOC analyst evaluating the effectiveness of an automated mitigation.
+2 minutes ago, the following alert was triggered:
+Title: {title}
+Summary: {summary}
+
+Since then, the following logs have been observed from the affected devices:
+{logs}
+
+Did the attack stop? Analyze the recent logs to determine if the malicious behavior is still present.
+"""
+
+def _evaluate_mitigation(alert_id: int, title: str, summary: str, devices: list[str]) -> None:
+    time.sleep(120)  # Wait 2 minutes for log stream to capture any ongoing attack
+    print(f"[analyzer] evaluating mitigation success for alert #{alert_id}...")
+    
+    # fetch logs for devices
+    recent = get_recent_logs(limit=100)
+    if devices:
+        recent = [l for l in recent if l.get("source_ip") in devices]
+        
+    log_text = _numbered_logs([
+        {"vendor": l["vendor"], "source_ip": l["source_ip"], "fields": l.get("parsed_fields", {})} 
+        for l in recent
+    ])
+    
+    prompt = _EVALUATION_PROMPT.format(title=title, summary=summary, logs=log_text)
+    
+    if not _CLIENT:
+        return
+        
+    try:
+        resp = _CLIENT.beta.chat.completions.parse(
+            model=_MODEL_TRIAGE,
+            messages=[{"role": "user", "content": prompt}],
+            response_format=EvaluationResult,
+        )
+        parsed = resp.choices[0].message.parsed
+        if not parsed:
+            return
+        
+        status_tag = "Action Verified: Successful" if parsed.attack_stopped else "Action Verified: Failed"
+        append_text = f"\n\n**Mitigation Evaluation**: {status_tag} - {parsed.reasoning}"
+        
+        conn = get_connection()
+        conn.execute(
+            "UPDATE alerts SET analysis = analysis || ?, status = ? WHERE id = ?", 
+            (append_text, status_tag if parsed.attack_stopped else "open", alert_id)
+        )
+        conn.commit()
+        conn.close()
+        print(f"[analyzer] updated alert #{alert_id} evaluation: {status_tag}")
+        
+    except Exception as exc:
+        print(f"[analyzer] evaluation API error: {exc}")
 
 # - Full two-tier analysis pipeline.
 # - Called from the pipeline's agent queue when a batch is ready.
@@ -234,6 +282,11 @@ def analyze_batch(batch: list[dict]) -> None:
             )
             if actions:
                 print(f"[analyzer] auto-response triggered {len(actions)} action(s) for alert #{alert_id}")
+                threading.Thread(
+                    target=_evaluate_mitigation, 
+                    args=(alert_id, title, finding["summary"], []), 
+                    daemon=True
+                ).start()
             continue
 
         title = analysis.get("title", finding["title"])
@@ -257,6 +310,11 @@ def analyze_batch(batch: list[dict]) -> None:
         )
         if actions:
             print(f"[analyzer] auto-response triggered {len(actions)} action(s) for alert #{alert_id}")
+            threading.Thread(
+                target=_evaluate_mitigation, 
+                args=(alert_id, title, finding["summary"], analysis.get("affected_devices", [])), 
+                daemon=True
+            ).start()
 
 def analyze_batch_async(batch: list[dict]) -> None:
     threading.Thread(
