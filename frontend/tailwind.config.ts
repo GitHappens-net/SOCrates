@@ -99,9 +99,7 @@ export default {
 				'accordion-up': 'accordion-up 0.2s ease-out'
 			},
 			fontFamily: {
-				serif: ['Tinos', ...defaultTheme.fontFamily.serif],
-				tinos: ['Tinos', 'serif'],
-				roboto: ['Roboto', ...defaultTheme.fontFamily.sans],
+				unica: ['"Unica One"', "sans-serif"],
 			},
 		}
 	},
