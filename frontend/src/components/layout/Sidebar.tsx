@@ -1,5 +1,7 @@
-import { LayoutDashboard, MonitorDot, Network, ChartColumn } from "lucide-react";
+import { useState } from "react";
+import { LayoutDashboard, MonitorDot, Network, ChartColumn, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import SettingsModal from "./SettingsModal";
 
 export type ViewId = "dashboard" | "devices" | "logs" | "history";
 
@@ -22,6 +24,8 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   return (
     <aside className="w-20 bg-gray-100 shrink-0 flex flex-col items-center gap-4 py-5 self-stretch">
       {/* Nav icons */}
@@ -42,6 +46,22 @@ export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
           </button>
         );
       })}
+
+      {/* Settings at the bottom */}
+      <div className="mt-auto">
+        <button
+          onClick={() => setIsSettingsOpen(true)}
+          className="group relative flex h-10 w-10 items-center justify-center rounded-xl border border-transparent text-gray-700 hover:border-2 hover:border-gray-700 hover:bg-gray-200"
+          title="Settings"
+        >
+          <Settings className="h-5 w-5" />
+        </button>
+      </div>
+
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+      />
     </aside>
   );
 }

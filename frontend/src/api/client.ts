@@ -6,16 +6,22 @@ import type {
   ApiStats,
 } from "./types";
 
-const BASE = "/api";
+function getBaseUrl() {
+  const customUrl = localStorage.getItem("socrates_backend_url");
+  if (customUrl) {
+    return `${customUrl}/api`;
+  }
+  return "/api";
+}
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
+  const res = await fetch(`${getBaseUrl()}${path}`);
   if (!res.ok) throw new Error(`API ${res.status}: ${path}`);
   return res.json() as Promise<T>;
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${getBaseUrl()}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -25,7 +31,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function del<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${getBaseUrl()}${path}`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
@@ -35,7 +41,7 @@ async function del<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function patch<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${getBaseUrl()}${path}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
