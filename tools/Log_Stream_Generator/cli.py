@@ -54,6 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--from", choices=["fortigate", "paloalto"],
                    default="fortigate", dest="from_device",
                    help="Pretend to send logs from this device (sets format and source IP).")
+    p.add_argument("--demo", action="store_true",
+                   help="Run both fortigate and paloalto streams concurrently (ignores --from).")
     p.add_argument("--serve", action="store_true",
                    help="Start REST API server mode.")
     p.add_argument("--host", default="127.0.0.1",
@@ -86,49 +88,81 @@ def main() -> None:
     print(f"[*] Loaded {len(df):,} flows  ({df['Label'].nunique()} labels)",
           file=sys.stderr)
     print(f"[*] Labels: {sorted(df['Label'].unique())}", file=sys.stderr)
-    log_format = args.from_device
-    print(f"[*] Format: {log_format}", file=sys.stderr)
+
+    if args.demo:
+        formats = ["fortigate", "paloalto"]
+        print(f"[*] Format: DEMO MODE (fortigate AND paloalto)", file=sys.stderr)
+    else:
+        formats = [args.from_device]
+        print(f"[*] Format: {formats[0]}", file=sys.stderr)
 
     if args.serve:
-        run_server(df, args.host, args.port, log_format,
+        if args.demo:
+            print("[-] Cannot use --serve with --demo. Demo mode is for dual-streaming syslog logs.", file=sys.stderr)
+            sys.exit(1)
+
+        run_server(df, args.host, args.port, formats[0],
                    args.speed, args.max_flows, args.seed)
         return
 
-    sinks = []
-    if args.output:
-        sinks.append(sink_file(args.output, log_format))
-        print(f"[*] Writing to {args.output}", file=sys.stderr)
-    if args.endpoint:
-        sinks.append(sink_http(args.endpoint))
-        print(f"[*] Posting to {args.endpoint}", file=sys.stderr)
-    if args.syslog:
-        source_ip = "127.0.0.1" if log_format == "fortigate" else "127.0.0.2"
+    import threading
 
-        sinks.append(sink_syslog(args.syslog_host, args.syslog_port, source_ip))
-        print(f"[*] Sending syslog to {args.syslog_host}:{args.syslog_port}", file=sys.stderr)
-        if source_ip:
-            print(f"[*] Spoofing source IP: {source_ip}", file=sys.stderr)
-    if not sinks:
-        sinks.append(sink_stdout)
+    def run_stream(log_format: str, start_index: int = 0):
+        sinks = []
+        if args.output:
+            out_file = args.output
+            if args.demo:
+                out_path = Path(args.output)
+                out_file = out_path.with_name(f"{out_path.stem}_{log_format}{out_path.suffix}")
+            sinks.append(sink_file(out_file, log_format))
+            print(f"[*] Writing {log_format} to {out_file}", file=sys.stderr)
+        if args.endpoint:
+            sinks.append(sink_http(args.endpoint))
+            print(f"[*] Posting {log_format} to {args.endpoint}", file=sys.stderr)
+        if args.syslog:
+            source_ip = "127.0.0.1" if log_format == "fortigate" else "127.0.0.2"
+            sinks.append(sink_syslog(args.syslog_host, args.syslog_port, source_ip))
+            print(f"[*] Sending {log_format} syslog to {args.syslog_host}:{args.syslog_port} (spoof {source_ip})", file=sys.stderr)
+        if not sinks:
+            sinks.append(sink_stdout)
 
-    speed_label = "no delay" if args.speed == 0 else f"{args.speed}\u00d7"
-    print(f"[*] Streaming at {speed_label} speed ...\n", file=sys.stderr)
+        speed_label = "no delay" if args.speed == 0 else f"{args.speed}\u00d7"
+        print(f"[*] Streaming {log_format} at {speed_label} speed ...\n", file=sys.stderr)
 
-    count = 0
+        # Slice the dataframe starting from `start_index`
+        stream_df = df.iloc[start_index:] if start_index > 0 else df
+
+        count = 0
+        try:
+            for line in stream_logs(
+                stream_df,
+                max_flows=args.max_flows,
+                speed=args.speed,
+                sample_frac=args.sample_frac,
+                shuffle=not args.no_shuffle,
+                fmt=log_format,
+                seed=args.seed,
+            ):
+                for s in sinks:
+                    s(line)
+                count += 1
+        except KeyboardInterrupt:
+            pass
+        finally:
+            print(f"\n[*] Done \u2014 emitted {count:,} {log_format} log lines.", file=sys.stderr)
+
+    threads = []
+    for i, fmt in enumerate(formats):
+        # 0 for the first format, 5000 for the second format in demo mode
+        start_index = 5000 if args.demo and i == 1 else 0
+        t = threading.Thread(target=run_stream, args=(fmt, start_index), daemon=True)
+        t.start()
+        threads.append(t)
+
     try:
-        for line in stream_logs(
-            df,
-            max_flows=args.max_flows,
-            speed=args.speed,
-            sample_frac=args.sample_frac,
-            shuffle=not args.no_shuffle,
-            fmt=log_format,
-            seed=args.seed,
-        ):
-            for s in sinks:
-                s(line)
-            count += 1
+        for t in threads:
+            while t.is_alive():
+                t.join(0.1)
     except KeyboardInterrupt:
-        print(f"\n[*] Interrupted after {count:,} events.", file=sys.stderr)
-    else:
-        print(f"\n[*] Done \u2014 emitted {count:,} log lines.", file=sys.stderr)
+        print("\n[*] Interrupted by user.", file=sys.stderr)
+
