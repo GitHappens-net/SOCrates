@@ -61,11 +61,14 @@ Log_Stream_Generator/
 # FortiGate logs to stdout, 100 flows, no delay
 python -m tools.Log_Stream_Generator --parquet data/cic-collection.parquet --max-flows 100 --speed 0
 
+# Run BOTH PaloAlto and FortiGate concurrently (syslog or standard sinks)
+python -m tools.Log_Stream_Generator --parquet data/cic-collection.parquet --max-flows 500 --speed 5 --demo
+
 # FortiGate logs to stdout, 1 flows, real speed
 python -m tools.Log_Stream_Generator --parquet data/DDoS-Friday-no-metadata.parquet --max-flows 1 --speed 1
 
 # PaloAlto CSV logs to file
-python -m tools.Log_Stream_Generator --parquet data/cic-collection.parquet --format paloalto --output /tmp/pa.csv --speed 0
+python -m tools.Log_Stream_Generator --parquet data/cic-collection.parquet --from paloalto --output /tmp/pa.csv --speed 0
 
 # REST API server (SOCrates backend polls this)
 python -m tools.Log_Stream_Generator --parquet data/cic-collection.parquet --serve --port 5050 --speed 0
@@ -152,7 +155,7 @@ python -m tools.Log_Stream_Generator --parquet data/cic-collection.parquet \
 
 ## Output Formats
 
-### FortiGate (`--format fortigate`)
+### FortiGate (`--from fortigate`)
 
 Native key=value format matching real FortiGate 7.x REST API / syslog output:
 
@@ -167,7 +170,7 @@ app="SSL_TLS" appcat="Network.Service" apprisk="low" utmaction="allow"
 
 **Includes 40+ fields:** timestamps, source/destination IPs & ports, interfaces, policies, NAT translation, byte/packet counts, application identification, UTM verdicts, hardware vendor fingerprints, geographic enrichment, session IDs, and threat scoring for attacks.
 
-### PaloAlto (`--format paloalto`)
+### PaloAlto (`--from paloalto`)
 
 CSV syslog format matching real PaloAlto TRAFFIC logs:
 
@@ -213,7 +216,7 @@ Attack flows also include UTM fields (`utmaction`, `utmevent`, `threatweight`, `
 usage: Log_Stream_Generator [-h] --parquet PARQUET [--max-flows N]
                              [--speed SPEED] [--sample-frac FRAC]
                              [--output FILE] [--endpoint URL]
-                             [--format {fortigate,paloalto}]
+                             [--from {fortigate,paloalto}] [--demo]
                              [--serve] [--host HOST] [--port PORT]
                              [--syslog] [--syslog-host HOST] [--syslog-port PORT]
                              [--no-shuffle] [--seed SEED]
@@ -225,7 +228,8 @@ usage: Log_Stream_Generator [-h] --parquet PARQUET [--max-flows N]
 | `--max-flows` | all | Limit number of flows to emit |
 | `--speed` | `1.0` | Playback speed: `0` = no delay, `1` = real-time, `10` = 10x |
 | `--sample-frac` | — | Randomly sample this fraction of the dataset first |
-| `--format` | `fortigate` | Output format: `fortigate` or `paloalto` |
+| `--from` | `fortigate` | Output format: `fortigate` or `paloalto` |
+| `--demo` | off | Run both fortigate and paloalto streams concurrently (ignores `--from`) |
 | `--output` | — | Write logs to this file |
 | `--endpoint` | — | POST each log to this HTTP URL |
 | `--syslog` | off | Send logs as syslog UDP datagrams |

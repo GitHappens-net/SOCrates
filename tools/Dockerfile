@@ -12,4 +12,4 @@ COPY tools ./tools
 ENV PYTHONPATH="/app"
 
 # Command to serve the Log Stream Generator from the dataset
-CMD ["python", "-m", "tools.Log_Stream_Generator", "--parquet", "data/datasets/CIC-IDS-2017/Friday-WorkingHours-Morning.pcap_ISCX.csv", "--serve", "--port", "5050", "--format", "fortigate", "--speed", "0"]
+CMD ["python", "-m", "tools.Log_Stream_Generator", "--parquet", "data/cic-collection.parquet", "--max-flows", "500", "--speed", "1", "--demo"]
