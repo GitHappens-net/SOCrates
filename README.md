@@ -1,68 +1,87 @@
-# SOCrates
-Your SOC AI assistant!
+﻿# SOCrates
+SOCrates is our submission for the 2026 Thessaloniki Netcompany Hackathon. A system that automates the daily life of a SOC expert, while keeping him at the center of decision-making.
+
+Our goal is the optimal evaluation of security alerts and the most immediate possible response to each threat. Your SOC AI assistant!
+
+*An Intelligent, Auto-Triaging Security Operations Center (SOC) built with React, Python, and Multi-Agent GenAI.*
 
 ---
 
-## Setup
+### 🚀 Live Demo
+Check out the frontend populated with mock data here: **[SOCrates Live Dashboard](https://socrates-ef2b.onrender.com/dashboard)**.  
+To switch it to live data, click the **Settings** icon in the bottom left of the sidebar and enter your backend's API URL (if exposed).
 
-**Requirements**
-```
-pip install -r backend/requirements.txt
+---
+
+## 📖 Overview
+
+SOCrates is an end-to-end, AI-enabled Security Information and Event Management (SIEM) and Security Orchestration, Automation, and Response (SOAR) platform. It was designed to alleviate alert fatigue by ingesting network logs, independently performing Tier-1 and Tier-2 triage using LLM agents, and allowing analysts to interact with alerts through a conversational interface.
+
+### ✨ Key Features
+- **Intelligent Triage & Analysis**: Uses autonomous GenAI agents (like `gpt-4.1` / `gpt-5.1`) to parse incoming syslog streams, normalize fields, identify attack vectors, and perform fully automated tier-1 (fast filtering), tier-2 (deep reasoning) triage, and tier-3 (post-mitigation evaluation) to verify if an attack was successfully stopped.
+- **SOAR Automated Mitigation**: Act on threats instantly! SOCrates integrates actively with endpoints and network appliances (Cisco, FortiGate, PaloAlto, Windows) to execute active containment playbooks or ad-hoc mitigation commands straight from the chat module.
+- **Log Stream Simulator**: Included right in the repo is a fully featured *Log Stream Generator* that translates academic IDS datasets (like CIC-IDS-2017) into hyper-realistic FortiGate/Palo Alto formats and streams them natively into the backend via Syslog.
+- **Modern Web Dashboard**: A fast, responsive frontend dashboard built using React, Vite, Tailwind CSS, and Recharts.
+
+---
+
+## 🏗️ Architecture
+
+```mermaid
+graph LR
+    A[Log Stream Generator / Firewall] -->|Syslog UDP 514| B(Python Backend)
+    B --> C{Pipeline Worker}
+    C -->|Parse / Normalize| D[(SQLite DB)]
+    C -->|Trigger| E[AI Agent: Tier-1 Triage]
+    E --> F[AI Agent: Tier-2 Reasoning]
+    F -->|Analysis Complete| D
+    B <-->|REST API 8000| G(Frontend Dashboard)
+    G -->|Interactive User Chat| F
+    G -->|Approve Action| H(SOAR Module)
+    H -->|Mitigation API| I[Vendor Firewalls / Devices]
+    I -.->|Verify Mitigation| J[AI Agent: Tier-3 Evaluation]
+    J -.->|Log Status| D
 ```
 
-**Dataset**
+---
 
-Download at least the [CIC-IDS Collection](https://www.kaggle.com/datasets/dhoogla/cicidscollection?resource=download) parquet from Kaggle and place it in the `data/` folder:
+## 🛠️ Quick Start (Docker Recommended)
 
-```
-data/
-  cic-collection.parquet
-```
+The easiest way to run the entire stack (Frontend, Backend, and the Log Engine) is using Docker. Ensure Docker is installed via [Docker Desktop](https://docs.docker.com/desktop/) and **make sure the Docker desktop application is running in the background** before executing the commands below.
+
+**⚠️ Important:** Open your terminal with **administrator privileges** in the root project folder so the SOAR module can successfully execute system-level mitigation commands if needed.
+
+### 1. Configure the Environment
+Create `.env` files for both the frontend and backend.
 
 **`backend/.env`**
 ```env
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL_PARSER=gpt-4.1
-OPENAI_MODEL_AGENT=gpt-4.1
-OPENAI_MODEL_REASONING=gpt-5.1
+OPENAI_API_KEY=sk-...           # Required
+OPENAI_MODEL_PARSER=gpt-4.1     # Template generation
+OPENAI_MODEL_AGENT=gpt-4.1      # Tier-1 triage
+OPENAI_MODEL_REASONING=gpt-5.1  # Tier-2 deep analysis + chat
 SYSLOG_HOST=0.0.0.0
-SYSLOG_PORT=514
+SYSLOG_PORT=514                 # Windows requires Admin for port 514. Change to 5514 if unprivileged.
 API_HOST=0.0.0.0
-API_PORT=5000
+API_PORT=8000                   # Internal container API port
+```
+> *(Optional: see `backend/README.md` for advanced SOAR keys and configs).*
+
+**`frontend/.env`**
+```env
+# URL where the frontend expects to reach the backend REST API
+VITE_BACKEND_URL=http://localhost:8000
 ```
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `OPENAI_MODEL_PARSER` | `gpt-4.1` | Template generation for unknown log formats |
-| `OPENAI_MODEL_AGENT` | `gpt-4.1` | Tier-1 triage (fast batch scanning) |
-| `OPENAI_MODEL_REASONING` | `gpt-5.1` | Tier-2 deep analysis + interactive chat |
-| `API_HOST` / `API_PORT` | `0.0.0.0:5000` | REST API bind address |
+### 2. Prepare the Dataset
+A condensed testing dataset is already provided at `data/cic-collection.parquet` for instant testing. Check for exact case sensitivity, especially on Linux, if you add your own dataset.
 
----
-
-## Running with Docker (Recommended)
-
-The easiest way to run the entire stack (Frontend, Backend, and optionally the Log Engine) is using Docker.
-
-**1. Set up Environment Variables**
-Ensure you have created the correct `.env` files for the backend and frontend:
-
-- `backend/.env` (See configuration details above, make sure `OPENAI_API_KEY` is set).
-- `frontend/.env`
-  ```env
-  VITE_BACKEND_URL=http://backend:8000
-  ```
-
-**2. Make sure the dataset is correctly placed**
-Ensure your parquet file is present at `data/cic-collection.parquet` (this should match the path used in the manual setup section). Note: Check for exact case sensitivity, especially on Linux—if you choose a different filename, update the `docker-compose.yml` accordingly.
-
-**3. Start the application**
-To run the Frontend + Backend (no log simulator):
+### 3. Spin Up the Stack
+To run the **Frontend + Backend**:
 ```bash
 docker compose up --build
 ```
-
-To run the Frontend + Backend + **Log Simulator**:
+To run the **Frontend + Backend + Log Simulator** (streams mock firewall events):
 ```bash
 docker compose --profile simulator up --build
 ```
@@ -70,108 +89,45 @@ docker compose --profile simulator up --build
 **Services will be available at:**
 - **Frontend Dashboard:** http://localhost:5173
 - **Backend API:** http://localhost:8000
-- **Simulator Server (if profile used):** http://localhost:5050
+- **Log Simulator Status:** http://localhost:5050 (if profile used)
 
-To stop the containers:
-```bash
-docker compose down
-```
+Stop the containers at any time using: `docker compose down`
 
 ---
 
-## Running Locally (Manual Setup)
-**Start the backend** (from project root):
+## 💻 Manual Setup
+
+If you prefer to run services individually without Docker (e.g. for development):
+
+### Backend
+1. **Install requirements:**
+   ```powershell
+   pip install -r backend/requirements.txt
+   ```
+2. **Start the backend server:** *(from project root)*
+   ```powershell
+   python -m backend.main
+   ```
+   *This starts the Syslog listener on port 514, the Flask REST API on port 8000, and auto-initializes the DB at `backend/database/socrates.db`.*
+
+### Frontend
+1. **Install modules & run Vite:**
+   ```powershell
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+### Simulating Logs
+You can generate test loads by running our custom log engine directly from the root namespace in a separate terminal:
 ```powershell
-python -m backend.main
+python -m tools.Log_Stream_Generator --parquet data/cic-collection.parquet --syslog --syslog-host 127.0.0.1 --syslog-port 514 --max-flows 1000 --speed 1
 ```
-
-This starts:
-- **UDP syslog listener** on port 514 (receives logs)
-- **REST API server** on port 5000 (dashboard + chat)
-- **DB** at `backend/database/socrates.db` (created automatically)
-
-**Simulate logs** (separate terminal, from project root):
-```powershell
-python -m tools.Log_Stream_Generator --parquet data\cic-collection.parquet --syslog --max-flows 1000 --speed 1
-```
-
-`--format` defaults to `fortigate`. Use `--format paloalto` for PaloAlto logs.
-
-Other output modes: `--output file.log` (file), `--endpoint http://...` (HTTP POST), `--serve` (REST API server). See [tools/Log_Stream_Generator/README.md](tools/Log_Stream_Generator/README.md) for full details.
+Use `--format paloalto` or `--format fortigate` to simulate different hardware. Find more information in the [Log Stream Generator README](tools/Log_Stream_Generator/README.md).
 
 ---
 
-## Architecture
+## 🛡️ SOAR Capabilities
+SOCrates isn't purely observational. The backend encompasses an extensive `services/vendors/` suite containing drivers for common infrastructure (Cisco, FortiGate, Windows, Palo Alto). Through our AI chat panel, SOC analysts can command firewalls to push blanket bans on identified malicious signatures or automatically restrict compromised client endpoints organically. Include your respective API tokens in `backend/.env` (e.g., `FORTIGATE_API_TOKEN`) to activate these paths!
 
-```
-┌───────────────────┐     UDP/514      ┌──────────────┐
-│  Log Stream       │ ───────────────> │   Parser     │
-│  Generator        │                  │  (syslog)    │
-│  (FortiGate/PA)   │                  └──────┬───────┘
-└───────────────────┘                         │
-                                              ▼
-                                     ┌────────────────┐
-                                     │   Normalizer   │
-                                     │  (templates /  │
-                                     │   AI regex)    │
-                                     └───────┬────────┘
-                                             │
-                              ┌──────────────┼──────────────┐
-                              ▼              ▼              ▼
-                      ┌──────────┐   ┌──────────────┐  ┌─────────┐
-                      │ DB Writer│   │ Agent Queue  │  │ Devices │
-                      │ (batch)  │   │ (100 / 5min) │  │ Tracker │
-                      └────┬─────┘   └──────┬───────┘  └─────────┘
-                           │                │
-                           ▼                ▼
-                      ┌─────────┐   ┌───────────────┐
-                      │ SQLite  │   │ Tier-1 Triage │
-                      │  (WAL)  │   │  (GPT-4.1)    │
-                      └─────────┘   └───────┬───────┘
-                                            │ threats?
-                                            ▼
-                                    ┌───────────────┐
-                                    │ Tier-2 Deep   │
-                                    │ Analysis      │
-                                    │  (GPT-5.1)    │
-                                    └───────┬───────┘
-                                            │
-                                            ▼
-                                    ┌───────────────┐     ┌──────────┐
-                                    │    Alerts     │ <── │ REST API │ <── User / Dashboard
-                                    │   Database    │ ──> │ :5000    │ ──> Chat (GPT-5.1)
-                                    └───────────────┘     └──────────┘
-```
 
-### Analysis Pipeline
-
-1. **Ingestion** — Logs arrive via UDP syslog, are normalized (built-in templates or AI-generated regex), and written to SQLite in batches.
-2. **Triage (GPT-4.1)** — Every 100 logs or 5 minutes, compact log summaries are sent to GPT-4.1 for fast threat detection.
-3. **Deep Analysis (GPT-5.1)** — If triage flags concerns, the flagged logs + historical alerts + device inventory are escalated to GPT-5.1 for detailed reasoning, correlation, and mitigation suggestions.
-4. **Alerts** — Results are stored as alerts with severity, analysis, and actionable mitigations (including device-specific CLI commands).
-5. **Chat** — Users can ask GPT-5.1 questions about their infrastructure in real-time, with full context of alerts, devices, and log statistics.
-
----
-
-## REST API
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/alerts` | List alerts (query: `?status=open&severity=critical&limit=50`) |
-| `GET` | `/api/alerts/<id>` | Get single alert with full analysis |
-| `PATCH` | `/api/alerts/<id>` | Update status: `{"status": "acknowledged\|resolved\|dismissed"}` |
-| `DELETE` | `/api/alerts` | Clear resolved/dismissed alerts |
-| `GET` | `/api/devices` | List all known devices |
-| `GET` | `/api/logs?limit=50` | Recent logs |
-| `GET` | `/api/stats` | Log ingestion statistics |
-| `POST` | `/api/chat` | Chat: `{"message": "...", "session_id": "..."}` |
-| `DELETE` | `/api/chat` | Clear chat session |
-
----
-
-## Example Datasets
-
-- [Real CyberSecurity Datasets (GitHub)](https://github.com/gfek/Real-CyberSecurity-Datasets)
-- [Network Intrusion dataset (CIC-IDS-2017) (Kaggle)](https://www.kaggle.com/datasets/chethuhn/network-intrusion-dataset)
-- [CIC-IDS Collection (Kaggle)](https://www.kaggle.com/datasets/dhoogla/cicidscollection)
-- [TON IoT and UNSW-NB15 (UNSW)](https://research.unsw.edu.au/projects/unsw-nb15-dataset)

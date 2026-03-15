@@ -232,9 +232,7 @@ def _evaluate_mitigation(alert_id: int, title: str, summary: str, devices: list[
     except Exception as exc:
         print(f"[analyzer] evaluation API error: {exc}")
 
-# - Full two-tier analysis pipeline.
-# - Called from the pipeline's agent queue when a batch is ready.
-# - Runs in its own daemon thread so it doesn't block log ingestion.
+
 def analyze_batch(batch: list[dict]) -> None:
     print(f"[analyzer] starting triage on {len(batch)} logs")
 
