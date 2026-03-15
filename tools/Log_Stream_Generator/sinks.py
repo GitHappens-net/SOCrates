@@ -29,11 +29,6 @@ def sink_syslog(host: str = "127.0.0.1", port: int = 514, source_ip: str | None 
     import socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     
-    # Binding to a specific source IP (like loopback) might cause [Errno 22] Invalid argument 
-    # when sending to an external docker network like "backend".
-    # Therefore we will let the OS assign the local IP automatically.
-    # We will include a fake hostname to differentiate them at the syslog layer instead.
-
     sent_count = 0
 
     def _send_syslog(line: str) -> None:

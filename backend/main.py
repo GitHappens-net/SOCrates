@@ -18,9 +18,21 @@ def _run_syslog() -> None:
         while True:
             try:
                 data, addr = sock.recvfrom(8192)
-                source_ip = addr[0]
                 raw_syslog = data.decode(errors="ignore").strip()
-                print(f"[syslog DEBUG] from {source_ip}: {raw_syslog}")
+
+                # Attempt to extract the IP spoofed in the syslog hostname header: <134>127.0.0.x: 
+                source_ip = addr[0]
+                import re
+                
+                # Make sure we only override if the hostname looks exactly like a valid IPv4 address
+                # Real devices will send hostnames (e.g. <134>FW-1: ) or won't match the strict \d+\.\d+\.\d+\.\d+ format.
+                match = re.match(r"^<\d+>(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\s*", raw_syslog)
+                if match:
+                    # Very simple IPv4 validation just to be fully safe
+                    parts = match.group(1).split('.')
+                    if all(0 <= int(p) <= 255 for p in parts):
+                        source_ip = match.group(1)
+
                 queue_log(source_ip, raw_syslog)
             except socket.timeout:
                 continue
