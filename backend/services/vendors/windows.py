@@ -2,8 +2,23 @@
 from __future__ import annotations
 
 import re
-import subprocess
 import logging
+
+def _run_winrm_cmd(device_ip: str, token: str | None, cmd_args: list[str]) -> tuple[int, str, str]:
+    try:
+        import winrm
+    except ImportError:
+        raise RuntimeError("pywinrm is required for remote Windows management. Run 'pip install pywinrm'")
+    
+    if not token or ":" not in token:
+        raise ValueError("For Windows, the 'token' parameter must be provided in 'username:password' format.")
+    
+    user, pwd = token.split(":", 1)
+    
+    # NTLM transport works over HTTP and encrypts the authentication, making it suitable for Windows targets
+    session = winrm.Session(device_ip, auth=(user, pwd), transport='ntlm')
+    res = session.run_cmd(cmd_args[0], cmd_args[1:])
+    return res.status_code, res.std_out.decode('cp437', errors='ignore'), res.std_err.decode('cp437', errors='ignore')
 
 WINDOWS_DEFENDER_TEMPLATE: dict = {
     "fingerprint": "windows_defender",
@@ -61,17 +76,18 @@ def open_port(device_ip: str, token: str | None, port: int, protocol: str = "tcp
             f"name={rule_name}"
         ]
         
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            if "No rules match the specified criteria." in result.stdout:
+        code, stdout, stderr = _run_winrm_cmd(device_ip, token, cmd)
+        
+        if code == 0:
+            if "No rules match the specified criteria." in stdout:
                 output_messages.append(f"{proto.upper()} rule not found.")
             else:
                 output_messages.append(f"{proto.upper()} rule removed.")
-        except subprocess.CalledProcessError as e:
-            if "No rules match" in (e.stdout or ""):
+        else:
+            if "No rules match" in stdout:
                 output_messages.append(f"{proto.upper()} rule not found.")
             else:
-                raise RuntimeError(f"Failed to open port {port} ({proto.upper()}): {e.stderr or e.stdout}")
+                raise RuntimeError(f"Failed to open port {port} ({proto.upper()}): {stderr or stdout}")
             
     return {"status": "success", "message": f"Port {port} unblocked. Details: {', '.join(output_messages)}."}
 
@@ -91,11 +107,12 @@ def block_ip(device_ip: str, token: str | None, target_ip: str) -> dict:
         "action=block", 
         f"remoteip={target_ip}"
     ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return {"status": "success", "message": f"IP {target_ip} blocked successfully.", "output": result.stdout}
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to block IP {target_ip}: {e.stderr or e.stdout}")
+    
+    code, stdout, stderr = _run_winrm_cmd(device_ip, token, cmd)
+    if code != 0:
+        raise RuntimeError(f"Failed to block IP {target_ip}: {stderr or stdout}")
+        
+    return {"status": "success", "message": f"IP {target_ip} blocked successfully.", "output": stdout}
 
 def close_port(device_ip: str, token: str | None, port: int, protocol: str = "tcp") -> dict:
     """Close or block a specific port using Windows Firewall."""
@@ -125,10 +142,10 @@ def close_port(device_ip: str, token: str | None, port: int, protocol: str = "tc
             f"localport={port}"
         ]
         
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            output_messages.append(f"{proto.upper()} blocked.")
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to block port {port} ({proto.upper()}): {e.stderr or e.stdout}")
+        code, stdout, stderr = _run_winrm_cmd(device_ip, token, cmd)
+        if code != 0:
+            raise RuntimeError(f"Failed to block port {port} ({proto.upper()}): {stderr or stdout}")
+            
+        output_messages.append(f"{proto.upper()} blocked.")
             
     return {"status": "success", "message": f"Port {port} blocked successfully for: {', '.join(output_messages)}."}

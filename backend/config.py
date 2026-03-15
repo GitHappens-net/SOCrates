@@ -25,6 +25,7 @@ API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
 API_PORT: int = int(os.getenv("API_PORT", "5000"))
 
 # SOAR / FortiGate configuration
+FORTIGATE_IP: str | None = os.getenv("FORTIGATE_IP")
 FORTIGATE_API_TOKEN: str | None = os.getenv("FORTIGATE_API_TOKEN")
 FORTIGATE_TOKENS_JSON: dict[str, str] = {}
 _FG_TOKENS_RAW = os.getenv("FORTIGATE_TOKENS_JSON", "")
@@ -39,6 +40,10 @@ if _FG_TOKENS_RAW:
 FORTIGATE_VERIFY_SSL: bool = os.getenv("FORTIGATE_VERIFY_SSL", "false").lower() in ("1", "true", "yes")
 FORTIGATE_TIMEOUT_SECONDS: int = int(os.getenv("FORTIGATE_TIMEOUT_SECONDS", "10"))
 
+# SOAR / Windows configuration
+WINDOWS_IP: str | None = os.getenv("WINDOWS_IP", "127.0.0.1")
+WINDOWS_USERNAME: str | None = os.getenv("WINDOWS_USERNAME", "")
+WINDOWS_PASSWORD: str | None = os.getenv("WINDOWS_PASSWORD", "")
 # SOAR / Palo Alto configuration
 PALOALTO_API_KEY: str | None = os.getenv("PALOALTO_API_KEY")
 PALOALTO_TOKENS_JSON: dict[str, str] = {}
@@ -47,7 +52,7 @@ if _PA_TOKENS_RAW:
     try:
         parsed = json.loads(_PA_TOKENS_RAW)
         if isinstance(parsed, dict):
-            PALOALTO_TOKENS_JSON = {str(k): str(v) for k, v in parsed.items()} 
+            PALOALTO_TOKENS_JSON = {str(k): str(v) for k, v in parsed.items()}
     except json.JSONDecodeError:
         PALOALTO_TOKENS_JSON = {}
 

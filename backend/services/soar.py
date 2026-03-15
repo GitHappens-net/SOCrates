@@ -7,6 +7,8 @@ from ..config import (
     FORTIGATE_TOKENS_JSON,
     PALOALTO_API_KEY,
     PALOALTO_TOKENS_JSON,
+    WINDOWS_USERNAME,
+    WINDOWS_PASSWORD,
     SOAR_AUTO_RESPONSE_ENABLED,
     SOAR_AUTO_RESPONSE_MIN_SEVERITY,
 )
@@ -71,6 +73,10 @@ def _token_for_device(device_ip: str, vendor: str) -> str | None:
         if host_key in PALOALTO_TOKENS_JSON:
             return PALOALTO_TOKENS_JSON[host_key]
         return PALOALTO_API_KEY
+    elif v in ("microsoft", "windows"):
+        if WINDOWS_USERNAME:
+            return f"{WINDOWS_USERNAME}:{WINDOWS_PASSWORD}"
+        return None
     return None
 
 def _is_localhost_device(device_ip: str) -> bool:
@@ -124,7 +130,7 @@ def execute_soar_action(*, device_ip: str, action_type: str, parameters: dict, r
 
     try:
         token = _token_for_device(device_ip, vendor_name)
-        if not token and vendor_name.lower() not in ("microsoft", "windows") and not _is_localhost_device(device_ip):
+        if not token and not _is_localhost_device(device_ip):
             err = f"Missing API token for {vendor_name} device ({device_ip})"
             update_soar_action_result(action_id, status="failed", error=err)
             return ActionResult(False, action_id, "failed", err, error=err)

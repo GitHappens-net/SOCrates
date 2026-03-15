@@ -73,7 +73,7 @@ _TOOLS = [
                         "description": "The IP address of the device to run the command on."
                     }
                 },
-                "required": ["port", "protocol"]
+                "required": ["port", "protocol", "device_ip"]
             }
         }
     },
@@ -99,7 +99,7 @@ _TOOLS = [
                         "description": "The IP address of the device to run the command on."
                     }
                 },
-                "required": ["port", "protocol"]
+                "required": ["port", "protocol", "device_ip"]
             }
         }
     },
@@ -117,10 +117,10 @@ _TOOLS = [
                     },
                     "device_ip": {
                         "type": "string",
-                        "description": "The IP address of the device to run the command on."
+                        "description": "The IP address of the device to run the command on (e.g. firewall or windows PC)."
                     }
                 },
-                "required": ["target_ip"]
+                "required": ["target_ip", "device_ip"]
             }
         }
     },
