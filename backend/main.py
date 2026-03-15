@@ -20,6 +20,7 @@ def _run_syslog() -> None:
                 data, addr = sock.recvfrom(8192)
                 source_ip = addr[0]
                 raw_syslog = data.decode(errors="ignore").strip()
+                print(f"[syslog DEBUG] from {source_ip}: {raw_syslog}")
                 queue_log(source_ip, raw_syslog)
             except socket.timeout:
                 continue

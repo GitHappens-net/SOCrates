@@ -78,15 +78,31 @@ function normalizeAssistantMarkdown(input: string): string {
 /* Chat Bubble */
 function ChatBubble({ msg, onQuickReply }: { msg: ChatMsg; onQuickReply: (text: string) => void }) {
   const isUser = msg.role === "user";
-  const normalized = isUser ? msg.content : normalizeAssistantMarkdown(msg.content);
+  let normalized = isUser ? msg.content : normalizeAssistantMarkdown(msg.content);
   const confirm = !isUser ? parseSoarConfirm(normalized) : null;
-  const result = !isUser ? parseSoarResult(normalized) : null;
+  
+  let result: SoarResultPayload | null = null;
+  if (!isUser && normalized.startsWith(SOAR_RESULT_PREFIX)) {
+    const splitIndex = normalized.indexOf("\n\n");
+    if (splitIndex !== -1) {
+      const jsonStr = normalized.slice(0, splitIndex);
+      result = parseSoarResult(jsonStr);
+      if (result) {
+        normalized = normalized.slice(splitIndex).trim();
+      }
+    } else {
+      result = parseSoarResult(normalized);
+      if (result) {
+        normalized = "";
+      }
+    }
+  }
 
   if (confirm) {
     const params = confirm.parameters ?? {};
     return (
       <div className="flex justify-start">
-        <div className="max-w-[92%] rounded-lg border border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="max-w-[92%] rounded-3xl rounded-bl-md border-2 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <p className="mb-2 flex items-center gap-2 font-semibold">
             <ShieldAlert className="h-4 w-4" />
             {confirm.title ?? "SOAR Action Confirmation"}
@@ -103,13 +119,13 @@ function ChatBubble({ msg, onQuickReply }: { msg: ChatMsg; onQuickReply: (text: 
           <div className="mt-3 flex gap-2">
             <button
               onClick={() => onQuickReply("confirm")}
-              className="rounded border border-amber-700 bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-amber-700"
+              className="rounded-full bg-amber-600 px-2.5 py-1 text-sm font-semibold text-white transition hover:bg-amber-700"
             >
               Confirm
             </button>
             <button
               onClick={() => onQuickReply("cancel")}
-              className="rounded border border-amber-400 bg-white px-2.5 py-1 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
+              className="rounded-full border border-amber-800 bg-white px-2.5 py-1 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
             >
               Cancel
             </button>
@@ -122,19 +138,49 @@ function ChatBubble({ msg, onQuickReply }: { msg: ChatMsg; onQuickReply: (text: 
   if (result) {
     const ok = Boolean(result.ok);
     return (
-      <div className="flex justify-start">
-        <div className={`max-w-[92%] rounded-lg border px-4 py-3 text-sm ${ok ? "border-green-500 bg-green-50 text-green-900" : "border-red-500 bg-red-50 text-red-900"}`}>
-          <p className="mb-1 flex items-center gap-2 font-semibold">
-            {ok ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-            {ok ? "SOAR Action Completed" : "SOAR Action Failed"}
-          </p>
-          <p className="text-xs"><span className="font-semibold">Status:</span> {result.status ?? "unknown"}</p>
-          {typeof result.action_id === "number" && result.action_id > 0 && (
-            <p className="text-xs"><span className="font-semibold">Action ID:</span> {result.action_id}</p>
-          )}
-          {result.summary && <p className="mt-1 text-xs">{result.summary}</p>}
-          {result.details && <p className="mt-1 text-xs opacity-90">{result.details}</p>}
+      <div className={`flex w-full flex-col gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
+        <div className="flex justify-start">
+          <div className={`max-w-[92%] rounded-3xl rounded-bl-md border-2 px-4 py-3 text-sm ${ok ? "border-green-500 bg-green-50 text-green-900" : "border-red-500 bg-red-50 text-red-900"}`}>
+            <p className="mb-1 flex items-center gap-2 font-semibold">
+              {ok ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+              {ok ? "SOAR Action Completed" : "SOAR Action Failed"}
+            </p>
+            <p className="text-xs"><span className="font-semibold">Status:</span> {result.status ?? "unknown"}</p>
+            {typeof result.action_id === "number" && result.action_id > 0 && (
+              <p className="text-xs"><span className="font-semibold">Action ID:</span> {result.action_id}</p>
+            )}
+            {result.summary && <p className="mt-1 text-xs">{result.summary}</p>}
+            {result.details && <p className="mt-1 text-xs opacity-90">{result.details}</p>}
+          </div>
         </div>
+        {normalized && (
+          <div className="flex justify-start">
+            <div className="max-w-[92%] rounded-[20px] px-4 py-2.5 text-sm leading-relaxed break-words overflow-hidden bg-gray-200 text-gray-900">
+               <div className="chat-markdown w-full min-w-0">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkBreaks]}
+                  components={{
+                    h1: ({ children }) => <h1 className="text-[1.05rem] font-bold mt-3 mb-1">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-[1rem] font-bold mt-3 mb-1">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-[0.95rem] font-bold mt-2 mb-1">{children}</h3>,
+                    p: ({ children }) => <p className="mb-2 mt-1 last:mb-0 leading-snug">{children}</p>,
+                    ul: ({ children }) => <ul className="mb-2 mt-1 list-disc pl-5 overflow-hidden">{children}</ul>,
+                    ol: ({ children }) => <ol className="mb-2 mt-1 list-decimal pl-5 overflow-hidden">{children}</ol>,
+                    li: ({ children }) => <li className="my-0.5 break-words leading-snug">{children}</li>,
+                    pre: ({ children }) => (
+                      <pre className="my-2 max-w-full overflow-x-auto rounded bg-gray-900 p-3 text-gray-100">{children}</pre>
+                    ),
+                    code: ({ children, className }) => (
+                      <code className={`text-[12px] break-words ${className ?? ""}`}>{children}</code>
+                    ),
+                  }}
+                >
+                  {normalized}
+                </ReactMarkdown>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -142,8 +188,8 @@ function ChatBubble({ msg, onQuickReply }: { msg: ChatMsg; onQuickReply: (text: 
   return (
     <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[92%] rounded-[20px] px-4 py-2.5 text-sm leading-relaxed break-words overflow-hidden ${
-          isUser ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-900"
+        className={`max-w-[92%] rounded-3xl px-4 py-2.5 text-sm leading-relaxed break-words overflow-hidden ${
+          isUser ? "bg-blue-500 rounded-br-md text-white" : "bg-gray-200 rounded-bl-md text-gray-900"
         }`}
       >
         {isUser ? (

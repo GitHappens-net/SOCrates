@@ -14,7 +14,7 @@ from ..config import (
 from ..database.db import create_soar_action, get_device, get_devices_list, update_soar_action_result
 
 # Import vendor modules dynamically or statically
-from .vendors import fortigate, paloalto
+from .vendors import fortigate, paloalto, windows
 
 class SoarError(Exception):
     pass
@@ -84,7 +84,7 @@ def _ensure_supported_device(device_ip: str) -> dict:
         raise SoarError(f"Unknown device IP: {device_ip}")
     
     vendor = str(dev.get("vendor", "")).lower()
-    if vendor not in ("fortinet", "palo alto"):
+    if vendor not in ("fortinet", "palo alto", "microsoft", "windows"):
         raise SoarError(f"SOAR action not supported for vendor: {dev.get('vendor')}")
     return dev
 
@@ -94,6 +94,8 @@ def _get_vendor_module(vendor: str):
         return fortigate
     elif v == "palo alto":
         return paloalto
+    elif v in ("microsoft", "windows"):
+        return windows
     raise SoarError(f"No SOAR module for vendor: {vendor}")
 
 def execute_soar_action(*, device_ip: str, action_type: str, parameters: dict, requested_by: str = "api", source: str = "manual") -> ActionResult:
@@ -122,7 +124,7 @@ def execute_soar_action(*, device_ip: str, action_type: str, parameters: dict, r
 
     try:
         token = _token_for_device(device_ip, vendor_name)
-        if not token and not _is_localhost_device(device_ip):
+        if not token and vendor_name.lower() not in ("microsoft", "windows") and not _is_localhost_device(device_ip):
             err = f"Missing API token for {vendor_name} device ({device_ip})"
             update_soar_action_result(action_id, status="failed", error=err)
             return ActionResult(False, action_id, "failed", err, error=err)
@@ -136,6 +138,12 @@ def execute_soar_action(*, device_ip: str, action_type: str, parameters: dict, r
             port = int(parameters.get("port", 0))
             protocol = str(parameters.get("protocol", "tcp"))
             result = vendor_module.close_port(device_ip, token, port, protocol)
+        elif action_type == "open_port":
+            port = int(parameters.get("port", 0))
+            protocol = str(parameters.get("protocol", "tcp"))
+            if not hasattr(vendor_module, "open_port"):
+                raise SoarError(f"vendor module {vendor_name} does not support open_port yet.")
+            result = vendor_module.open_port(device_ip, token, port, protocol)
         else:
             raise SoarError(f"Unsupported action_type: {action_type}")
 

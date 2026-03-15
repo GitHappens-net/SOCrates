@@ -28,8 +28,7 @@ correlate events, and recommend mitigations.
 
 Guidelines:
 - Be concise and actionable.
-- When suggesting mitigations, include device-specific CLI commands
-  (for example FortiGate CLI commands for Fortinet devices).
+- ALWAYS use the provided tools (like close_port, open_port, block_ip) to execute actions directly on the devices. NEVER simply give the user commands to run manually unless there aren't any tools that correspond to them.
 - Reference specific alert IDs, device IPs, and log data when available.
 - If you don't have enough information to answer, use the provided tools to query the database.
 - Never claim you do not have live feed/SIEM access unless tool calls explicitly return empty or errors.
@@ -40,6 +39,7 @@ Guidelines:
 - Use `search_devices` to list devices if the user asks about the infrastructure.
 - Use `query_alerts` to check recent alerts.
 - Use `get_log_statistics` if the user asks for ingest stats or top talkers.
+- If the user asks to close a port but doesn't specify TCP or UDP, you MUST ask them which protocol they want to block before executing the action.
 
 ### Snapshot Time (UTC)
 {now_utc}
@@ -55,7 +55,7 @@ _TOOLS = [
         "type": "function",
         "function": {
             "name": "close_port",
-            "description": "Issue a command to close or block a port on a specific firewall or network device.",
+            "description": "Issue a command to close or block a port on a specific firewall or network device. ALWAYS ask the user if they want to block TCP or UDP if they don't specify.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -65,8 +65,34 @@ _TOOLS = [
                     },
                     "protocol": {
                         "type": "string",
-                        "enum": ["tcp", "udp", "both"],
-                        "description": "The protocol of the port."
+                        "enum": ["tcp", "udp"],
+                        "description": "The protocol of the port. MUST be exactly 'tcp' or 'udp'."
+                    },
+                    "device_ip": {
+                        "type": "string",
+                        "description": "The IP address of the device to run the command on."
+                    }
+                },
+                "required": ["port", "protocol"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_port",
+            "description": "Issue a command to re-open or unblock a port on a specific firewall or network device by removing the previously created block rule. ALWAYS ask the user if they want to unblock TCP or UDP if they don't specify.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "port": {
+                        "type": "integer",
+                        "description": "The port number to unblock (e.g. 22)."
+                    },
+                    "protocol": {
+                        "type": "string",
+                        "enum": ["tcp", "udp"],
+                        "description": "The protocol of the port. MUST be exactly 'tcp' or 'udp'."
                     },
                     "device_ip": {
                         "type": "string",
@@ -169,33 +195,33 @@ _SOAR_CONFIRM_PREFIX = "SOAR_CONFIRM::"
 _SOAR_RESULT_PREFIX = "SOAR_RESULT::"
 
 def _infer_device_from_history(history: list[dict]) -> str | None:
-    """Infer likely Fortinet device IP from recent conversation context."""
+    """Infer likely device IP from recent conversation context."""
     devices = get_devices_list()
-    fortigate_ips = {
+    valid_ips = {
         str(d.get("ip"))
         for d in devices
-        if str(d.get("vendor", "")).lower() == "fortinet"
+        if str(d.get("vendor", "")).lower() in ("fortinet", "palo alto", "microsoft", "windows")
     }
-    if not fortigate_ips:
+    if not valid_ips:
         return None
 
-    # Search latest messages first; pick first IP that is a Fortinet device.
+    # Search latest messages first; pick first IP that is a supported device.
     for msg in reversed(history[-12:]):
         content = str(msg.get("content", ""))
         for ip in _IP_RE.findall(content):
-            if ip in fortigate_ips:
+            if ip in valid_ips:
                 return ip
 
-    # Fallback: most recently seen Fortinet device.
+    # Fallback: most recently seen supported device.
     for d in devices:
-        if str(d.get("vendor", "")).lower() == "fortinet":
+        if str(d.get("vendor", "")).lower() in ("fortinet", "palo alto", "microsoft", "windows"):
             return str(d.get("ip"))
     return None
 
-def _default_fortigate_device_ip() -> str | None:
+def _default_device_ip() -> str | None:
     devices = get_devices_list()
     for d in devices:
-        if str(d.get("vendor", "")).lower() == "fortinet":
+        if str(d.get("vendor", "")).lower() in ("fortinet", "palo alto", "microsoft", "windows"):
             return d.get("ip")
     return None
 
@@ -267,6 +293,32 @@ def _execute_soar_intent(intent: dict, device_ip: str) -> str:
             details=details or res.summary,
         )
 
+    if intent["type"] == "open_port":
+        res = execute_soar_action(
+            device_ip=device_ip,
+            action_type="open_port",
+            parameters={
+                "port": intent["port"],
+                "protocol": intent["protocol"],
+            },
+            requested_by="chat",
+            source="chat",
+        )
+        details = None
+        if res.error and "Missing API token" in res.error:
+            details = "Set appropriate API tokens in backend/.env."
+        return _soar_result_message(
+            ok=res.ok,
+            action_id=res.action_id,
+            status=res.status,
+            summary=(
+                f"open_port on {device_ip}"
+                if res.ok
+                else f"Failed open_port on {device_ip}"
+            ),
+            details=details or res.summary,
+        )
+
     if intent["type"] == "block_ip":
         res = execute_soar_action(
             device_ip=device_ip,
@@ -293,13 +345,13 @@ def _execute_soar_intent(intent: dict, device_ip: str) -> str:
     return _soar_result_message(ok=False, action_id=0, status="failed", summary="Unsupported SOAR intent")
 
 def _handle_soar_intent(intent: dict, session_id: str, message: str, history: list[dict]) -> str:
-    device_ip = intent.get("device_ip") or _infer_device_from_history(history) or _default_fortigate_device_ip()
+    device_ip = intent.get("device_ip") or _infer_device_from_history(history) or _default_device_ip()
     if not device_ip:
         reply = _soar_result_message(
             ok=False,
             action_id=0,
             status="failed",
-            summary="No Fortinet device is available in inventory to execute this action.",
+            summary="No supported device is available in inventory to execute this action.",
         )
         _persist_turn(session_id, message, reply)
         return reply
@@ -358,9 +410,47 @@ def chat(message: str, session_id: str = "default") -> str:
             _persist_turn(session_id, message, reply)
             return reply
 
-        reply = _execute_soar_intent(staged, staged["device_ip"])
-        _persist_turn(session_id, message, reply)
-        return reply
+        # Execute the tool
+        exec_reply = _execute_soar_intent(staged, staged["device_ip"])
+        tool_call_dict = staged.get("raw_tool_call")
+        msg_obj_dict = staged.get("msg_obj_dict")
+        
+        # Give the executed result back to the AI for a final summary
+        if tool_call_dict and msg_obj_dict:
+            # We must restore the correct history context for the AI
+            with _lock:
+                history = _sessions.setdefault(session_id, [])
+            
+            system = _build_system_prompt()
+            messages = [{"role": "system", "content": system}]
+            messages.extend(history)
+            messages.append(msg_obj_dict) # The assistant message with the tool_calls
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call_dict["id"],
+                "name": tool_call_dict["function"]["name"],
+                "content": exec_reply
+            })
+            
+            try:
+                resp2 = _CLIENT.chat.completions.create(
+                    model=_MODEL,
+                    messages=messages,
+                    tools=_TOOLS,
+                    temperature=0.3,
+                    max_completion_tokens=16000,
+                )
+                ai_text = resp2.choices[0].message.content.strip() if resp2.choices[0].message.content else "Action completed."
+                final_reply = exec_reply + "\n\n" + ai_text
+            except Exception as exc:
+                final_reply = exec_reply + f"\n\n(AI Summary Failed: {exc})"
+                
+            _persist_turn(session_id, message, final_reply)
+            return final_reply
+        else:
+            # Fallback if no tool call info was stored
+            _persist_turn(session_id, message, exec_reply)
+            return exec_reply
 
     with _lock:
         history = _sessions.setdefault(session_id, [])
@@ -386,8 +476,12 @@ def chat(message: str, session_id: str = "default") -> str:
             func_name = tool_call.function.name
             args = json.loads(tool_call.function.arguments)
 
-            if func_name in ("close_port", "block_ip"):
-                intent = {"type": func_name}
+            if func_name in ("close_port", "block_ip", "open_port"):
+                intent = {
+                    "type": func_name,
+                    "raw_tool_call": tool_call.model_dump(),
+                    "msg_obj_dict": msg_obj.model_dump(exclude_unset=True)
+                }
                 intent.update(args)
                 return _handle_soar_intent(intent, session_id, message, history_snapshot)
 
@@ -418,7 +512,7 @@ def chat(message: str, session_id: str = "default") -> str:
                 temperature=0.3,
                 max_completion_tokens=16000,
             )
-            reply = resp2.choices[0].message.content.strip()
+            reply = resp2.choices[0].message.content.strip() if resp2.choices[0].message.content else "Done."
 
         else:
             reply = msg_obj.content.strip() if msg_obj.content else "Done."
