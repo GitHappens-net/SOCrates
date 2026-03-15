@@ -1,14 +1,20 @@
+import os
 import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent / "socrates.db"
+# Use an environment variable, or fallback to local repo if running outside Docker
+DB_PATH = os.environ.get("DATABASE_PATH", str(Path(__file__).resolve().parent / "socrates.db"))
 
 # Create/open the database and ensure all tables exist
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL")
+    # WAL mode requires shared memory mapping which can fail on Windows volume mounts
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError:
+        pass
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     return conn

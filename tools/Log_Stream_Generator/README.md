@@ -2,14 +2,12 @@
 
 A high-fidelity firewall log simulator that transforms **CIC-IDS-2017 / CIC-IDS-Collection** network flow datasets into vendor-native firewall log streams. Designed to feed the SOCrates AI-powered SOC assistant with realistic telemetry for development, testing, and demos.
 
----
-
 ## Why This Exists
 
 Real FortiGate / PaloAlto appliances produce logs only when real traffic is present. This generator solves that by:
 
 - Converting **academic IDS datasets** (CIC-IDS) into **production-grade firewall logs**
-- Producing output **indistinguishable** from real FortiGate REST API or PaloAlto syslog
+- Producing output **indistinguishable** from real FortiGate/PaloAlto logs
 - Supporting multiple delivery modes — stdout, file, syslog UDP, HTTP POST, or a full REST API server
 - Including **33 attack categories** (DDoS, Botnet, Portscan, Web Attacks, Brute Force, etc.) alongside benign traffic
 
