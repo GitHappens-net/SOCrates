@@ -13,4 +13,5 @@ package-lock.json
 vite.config.js
 vite.config.d.ts
 
-/data
+/data/devices
+/data/Network Intrusion dataset(CIC-IDS- 2017)

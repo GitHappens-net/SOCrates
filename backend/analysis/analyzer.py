@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import re
 import threading
 from pydantic import BaseModel, Field
 import time
@@ -81,7 +79,7 @@ class DeepAnalysisResult(BaseModel):
     title: str = Field(description="Refined alert title")
     analysis: str = Field(description="Detailed explanation of the threat, attack vector, and any correlations with past alerts")
     mitigations: list[Mitigation]
-    affected_devices: list[str]
+    affected_devices: list[str] = Field(description="List of device IPs from the inventory that actually generated the problematic logs. Do NOT include devices that didn't generate the logs.")
 
 class EvaluationResult(BaseModel):
     attack_stopped: bool

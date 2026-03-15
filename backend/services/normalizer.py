@@ -1,4 +1,3 @@
-import hashlib
 import json
 import re
 import time
@@ -81,7 +80,6 @@ def _parse_kv(raw_syslog: str, header_regex: str | None = None) -> dict | None:
     for key, val in _KV_RE.findall(payload):
         fields[key] = val.strip('"')
     return fields if fields else None
-
 
 def _parse_csv(raw_syslog: str, fieldnames: list[str], min_columns: int = 0) -> dict | None:
     # Remove optional syslog priority (<166>) before CSV parsing.

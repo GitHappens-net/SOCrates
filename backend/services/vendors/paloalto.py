@@ -1,7 +1,8 @@
-"""Built-in templates and enrichment helpers for Palo Alto logs."""
 from __future__ import annotations
-
 import re
+import requests
+import ipaddress
+from ...config import PALOALTO_VERIFY_SSL, PALOALTO_TIMEOUT_SECONDS
 
 _PA_CSV_FIELDS = [
     "receive_time",
@@ -66,10 +67,8 @@ PALOALTO_CSV_TRAFFIC_TEMPLATE: dict = {
 
 _BUILTINS: list[dict] = [PALOALTO_CSV_TRAFFIC_TEMPLATE]
 
-
 def builtins() -> list[dict]:
     return [dict(t) for t in _BUILTINS]
-
 
 def match_fingerprint(raw_syslog: str) -> str | None:
     if re.search(
@@ -79,9 +78,8 @@ def match_fingerprint(raw_syslog: str) -> str | None:
         return "paloalto_csv_traffic"
     return None
 
-
+# Align fields with the common schema expected by downstream analytics.
 def enrich_fields(fields: dict) -> dict:
-    # Align fields with the common schema expected by downstream analytics.
     if fields.get("src"):
         fields.setdefault("srcip", fields["src"])
     if fields.get("dst"):
@@ -103,10 +101,6 @@ def enrich_fields(fields: dict) -> dict:
     if fields.get("serial"):
         fields.setdefault("devname", fields["serial"])
     return fields
-
-import requests
-import ipaddress
-from ...config import PALOALTO_VERIFY_SSL, PALOALTO_TIMEOUT_SECONDS
 
 def _paloalto_base(device_ip: str) -> str:
     return f"https://{device_ip}/api"
@@ -240,5 +234,113 @@ def close_port(device_ip: str, token: str, port: int, protocol: str) -> dict:
     return {
         "service_object": service_name,
         "policy_name": policy_name,
+        "success": True
+    }
+
+def unblock_ip(device_ip: str, token: str, target_ip: str) -> dict:
+    try:
+        ipaddress.ip_address(target_ip)
+    except ValueError as exc:
+        raise ValueError(f"Invalid IP: {target_ip}") from exc
+
+    obj_name = f"SOC-BLOCK-{target_ip.replace('.', '-')}"
+    policy_name = f"SOC-DENY-{target_ip.replace('.', '-')}"
+
+    # 1. Delete Security Rule
+    rule_xpath = f"/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys1']/rulebase/security/rules/entry[@name='{policy_name}']"
+    try:
+        _paloalto_request(device_ip, token, {
+            "type": "config",
+            "action": "delete",
+            "xpath": rule_xpath
+        })
+    except RuntimeError:
+        pass # Ignore if rule does not exist
+
+    # 2. Delete Address Object
+    addr_xpath = f"/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys1']/address/entry[@name='{obj_name}']"
+    try:
+        _paloalto_request(device_ip, token, {
+            "type": "config",
+            "action": "delete",
+            "xpath": addr_xpath
+        })
+    except RuntimeError:
+        pass
+
+    return {
+        "address_object": obj_name,
+        "policy_name": policy_name,
+        "status": "deleted"
+    }
+
+def open_port(device_ip: str, token: str, port: int, protocol: str) -> dict:
+    if port < 1 or port > 65535:
+        raise ValueError("Port must be 1-65535")
+    proto = protocol.lower()
+    if proto not in ("tcp", "udp"):
+        raise ValueError("protocol must be tcp|udp")
+
+    service_name = f"SOC-CLOSE-{proto.upper()}-{port}"
+    policy_name = f"SOC-DENY-{proto.upper()}-{port}"
+
+    # 1. Delete Security Rule
+    rule_xpath = f"/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys1']/rulebase/security/rules/entry[@name='{policy_name}']"
+    try:
+        _paloalto_request(device_ip, token, {
+            "type": "config",
+            "action": "delete",
+            "xpath": rule_xpath
+        })
+    except RuntimeError:
+        pass
+
+    # 2. Delete Service Object
+    svc_xpath = f"/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys1']/service/entry[@name='{service_name}']"
+    try:
+        _paloalto_request(device_ip, token, {
+            "type": "config",
+            "action": "delete",
+            "xpath": svc_xpath
+        })
+    except RuntimeError:
+        pass
+
+    return {
+        "service_object": service_name,
+        "policy_name": policy_name,
+        "status": "deleted"
+    }
+
+def quarantine_mac_address(device_ip: str, token: str, mac_address: str) -> dict:
+    # Ensure standard MAC format for name
+    safe_mac = mac_address.replace(":", "-").replace(".", "-").upper()
+    policy_name = f"SOC-QUARANTINE-MAC-{safe_mac}"
+
+    # PAN-OS supports source-mac directly in the policy 
+    # xpath: /config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys1']/rulebase/security/rules
+    rule_xpath = f"/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys1']/rulebase/security/rules/entry[@name='{policy_name}']"
+    rule_element = f"""
+        <from><member>any</member></from>
+        <to><member>any</member></to>
+        <source><member>any</member></source>
+        <destination><member>any</member></destination>
+        <source-mac><member>{mac_address}</member></source-mac>
+        <application><member>any</member></application>
+        <service><member>any</member></service>
+        <action>deny</action>
+        <log-end>yes</log-end>
+    """
+
+    _paloalto_request(device_ip, token, {
+        "type": "config",
+        "action": "set",
+        "xpath": rule_xpath,
+        "element": rule_element
+    })
+
+    return {
+        "policy_name": policy_name,
+        "mac_address": mac_address,
         "success": True
     }

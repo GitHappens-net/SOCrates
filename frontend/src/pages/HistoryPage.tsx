@@ -17,7 +17,7 @@ export default function HistoryPage() {
           AI ANALYSIS
         </h3>
         <div className="ml-auto flex items-center gap-2">
-          {["all", "open", "acknowledged", "resolved", "dismissed"].map((s) => (
+          {["all", "open", "resolved", "dismissed"].map((s) => (
             <button
               key={s}
               onClick={() => setFilter(s)}
