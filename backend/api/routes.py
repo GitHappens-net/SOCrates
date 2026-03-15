@@ -5,7 +5,7 @@ from ..database.db import (
     clear_alerts, get_alert, get_alerts, get_devices_list,
     get_fortigate_devices, get_log_stats, get_recent_logs,
     get_soar_action, get_soar_actions, update_alert_status)
-from ..services.soar import execute_soar_action
+from ..services.soar import execute_soar_action, execute_alert_mitigations
 
 api_bp = Blueprint("api", __name__)
 
@@ -31,8 +31,14 @@ def get_single_alert(alert_id: int):
 def patch_alert(alert_id: int):
     body = request.get_json(silent=True) or {}
     new_status = body.get("status")
-    if new_status not in ("open", "acknowledged", "resolved", "dismissed"):
+    if new_status not in ("open", "acknowledged", "resolved"):
         return jsonify({"error": "Invalid status"}), 400
+        
+    # If the user is resolving the alert, execute SOAR mitigations based on the recommended actions
+    # This is a basic implementation executing block_ip to affected_devices through firewall.
+    if new_status == "resolved":
+        execute_alert_mitigations(alert_id)
+        
     if update_alert_status(alert_id, new_status):
         return jsonify(get_alert(alert_id))
     return jsonify({"error": "Alert not found"}), 404

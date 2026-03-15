@@ -1,6 +1,4 @@
-"""Built-in templates and enrichment helpers for Cisco logs."""
 from __future__ import annotations
-
 import re
 
 CISCO_IOS_TEMPLATE: dict = {
@@ -55,10 +53,8 @@ _ASA_CONN_RE = re.compile(
     re.IGNORECASE,
 )
 
-
 def builtins() -> list[dict]:
     return [dict(t) for t in _BUILTINS]
-
 
 def match_fingerprint(raw_syslog: str) -> str | None:
     if re.search(r"%ASA-\d+-\d+:", raw_syslog):
@@ -68,7 +64,6 @@ def match_fingerprint(raw_syslog: str) -> str | None:
     if re.search(r"<\d+>\d+:\s*\*?[A-Z][a-z]{2}\s+\d+\s+[\d:\.]+:", raw_syslog):
         return "cisco_ios_debug"
     return None
-
 
 def enrich_fields(fields: dict) -> dict:
     message = fields.get("message", "")

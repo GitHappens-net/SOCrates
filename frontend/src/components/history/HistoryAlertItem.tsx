@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { ShieldAlert, ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import { patchAlertStatus } from "@/api/client";
 import type { ApiAlert } from "@/api/types";
 
@@ -64,7 +67,26 @@ export default function HistoryAlertItem({ alert, onStatusChange }: HistoryAlert
       {open && (
         <div className="border-t border-gray-100 px-5 py-4">
           <h4 className="mb-1 text-md font-unica font-bold uppercase tracking-wider text-gray-700">AI Analysis</h4>
-          <p className="mb-4 whitespace-pre-wrap text-sm leading-relaxed text-gray-800">{alert.analysis}</p>
+          <div className="mb-4 text-sm leading-relaxed text-gray-800 chat-markdown min-w-0">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkBreaks]}
+              components={{
+                h1: ({ children }) => <h1 className="text-[1.05rem] font-bold mt-3 mb-1">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-[1rem] font-bold mt-3 mb-1">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-[0.95rem] font-bold mt-2 mb-1">{children}</h3>,
+                p: ({ children }) => <p className="mb-2 mt-1 last:mb-0 leading-snug">{children}</p>,
+                ul: ({ children }) => <ul className="list-disc pl-5 mb-2 mt-1 space-y-1">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 mt-1 space-y-1">{children}</ol>,
+                li: ({ children }) => <li className="pl-1">{children}</li>,
+                code: ({ children }) => <code className="bg-gray-200 rounded px-1.5 py-0.5 text-[0.85em] font-mono break-words">{children}</code>,
+                pre: ({ children }) => <pre className="bg-gray-800 text-gray-100 rounded-lg p-3 my-2 overflow-x-auto text-[0.85em] font-mono whitespace-pre-wrap">{children}</pre>,
+                a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#5271ff] hover:underline break-words">{children}</a>,
+                strong: ({ children }) => <strong className="font-bold text-gray-900">{children}</strong>,
+              }}
+            >
+              {alert.analysis}
+            </ReactMarkdown>
+          </div>
 
           {alert.mitigations.length > 0 && (
             <>
@@ -103,14 +125,6 @@ export default function HistoryAlertItem({ alert, onStatusChange }: HistoryAlert
           )}
 
           <div className="flex gap-2 border-t border-gray-300 pt-3">
-            {alert.status !== "acknowledged" && (
-              <button
-                onClick={() => changeStatus("acknowledged")}
-                className="rounded-full border-2 border-[#5271ff] bg-white hover:bg-blue-100 px-3 py-1.5 text-[12px] font-semibold text-[#5271ff]"
-              >
-                Acknowledge
-              </button>
-            )}
             {alert.status !== "resolved" && (
               <button
                 onClick={() => changeStatus("resolved")}
@@ -122,7 +136,7 @@ export default function HistoryAlertItem({ alert, onStatusChange }: HistoryAlert
             {alert.status !== "dismissed" && (
               <button
                 onClick={() => changeStatus("dismissed")}
-                className="rounded-full border-2 border-gray-700 bg-white hover:bg-gray-200 px-3 py-1.5 text-[12px] font-semibold text-gray-700"
+                className="rounded-full border-2 border-red-600 bg-white hover:bg-red-100 px-3 py-1.5 text-[12px] font-semibold text-red-700"
               >
                 Dismiss
               </button>

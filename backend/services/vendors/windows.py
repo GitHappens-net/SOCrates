@@ -1,8 +1,4 @@
-"""Built-in templates and detection for Windows Defender/Firewall logs."""
 from __future__ import annotations
-
-import re
-import logging
 
 def _run_winrm_cmd(device_ip: str, token: str | None, cmd_args: list[str]) -> tuple[int, str, str]:
     try:
@@ -54,7 +50,6 @@ def enrich_fields(fields: dict) -> dict:
     return fields
 
 def open_port(device_ip: str, token: str | None, port: int, protocol: str = "tcp") -> dict:
-    """Remove a previously created block rule for a port using Windows Firewall."""
     if not isinstance(port, int) or port <= 0 or port > 65535:
         raise ValueError(f"Invalid port: {port}")
 
@@ -92,7 +87,6 @@ def open_port(device_ip: str, token: str | None, port: int, protocol: str = "tcp
     return {"status": "success", "message": f"Port {port} unblocked. Details: {', '.join(output_messages)}."}
 
 def block_ip(device_ip: str, token: str | None, target_ip: str) -> dict:
-    """Block an IP using Windows Firewall."""
     try:
         import ipaddress
         ipaddress.ip_address(target_ip)
@@ -115,7 +109,6 @@ def block_ip(device_ip: str, token: str | None, target_ip: str) -> dict:
     return {"status": "success", "message": f"IP {target_ip} blocked successfully.", "output": stdout}
 
 def close_port(device_ip: str, token: str | None, port: int, protocol: str = "tcp") -> dict:
-    """Close or block a specific port using Windows Firewall."""
     if not isinstance(port, int) or port <= 0 or port > 65535:
         raise ValueError(f"Invalid port: {port}")
 
@@ -149,3 +142,42 @@ def close_port(device_ip: str, token: str | None, port: int, protocol: str = "tc
         output_messages.append(f"{proto.upper()} blocked.")
             
     return {"status": "success", "message": f"Port {port} blocked successfully for: {', '.join(output_messages)}."}
+
+def kill_process(device_ip: str, token: str | None, pid_or_name: str) -> dict:
+    # If the input is only digits, treat it as a PID
+    if pid_or_name.isdigit():
+        cmd = ["taskkill", "/F", "/PID", pid_or_name]
+        target_type = "PID"
+    else:
+        # Prevent injection issues by doing a simple check, since Windows taskkill allows name based matching
+        if not pid_or_name.endswith(".exe"):
+            pid_or_name += ".exe"
+        cmd = ["taskkill", "/F", "/IM", pid_or_name]
+        target_type = "Image Name"
+
+    code, stdout, stderr = _run_winrm_cmd(device_ip, token, cmd)
+    if code != 0:
+        if "not found" in stderr.lower() or "not found" in stdout.lower():
+            return {"status": "skipped", "message": f"Process {pid_or_name} was not running."}
+        raise RuntimeError(f"Failed to kill process {pid_or_name}: {stderr or stdout}")
+
+    return {
+        "status": "success", 
+        "message": f"Process '{pid_or_name}' ({target_type}) killed successfully.", 
+        "output": stdout.strip()
+    }
+
+def quarantine_file(device_ip: str, token: str | None, file_path: str) -> dict:
+    # Using icacls to deny all access to the file. 
+    # This locks the file down so it cannot be read, executed, or modified.
+    cmd = ["icacls", file_path, "/deny", "Everyone:(F)"]
+
+    code, stdout, stderr = _run_winrm_cmd(device_ip, token, cmd)
+    if code != 0:
+        raise RuntimeError(f"Failed to quarantine file {file_path}: {stderr or stdout}")
+
+    return {
+        "status": "success", 
+        "message": f"File '{file_path}' successfully quarantined (access denied to Everyone).", 
+        "output": stdout.strip()
+    }

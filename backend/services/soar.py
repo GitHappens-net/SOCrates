@@ -1,7 +1,6 @@
 ﻿from __future__ import annotations
 import ipaddress
 from dataclasses import dataclass
-
 from ..config import (
     FORTIGATE_API_TOKEN,
     FORTIGATE_TOKENS_JSON,
@@ -12,10 +11,7 @@ from ..config import (
     SOAR_AUTO_RESPONSE_ENABLED,
     SOAR_AUTO_RESPONSE_MIN_SEVERITY,
 )
-
 from ..database.db import create_soar_action, get_device, get_devices_list, update_soar_action_result
-
-# Import vendor modules dynamically or statically
 from .vendors import fortigate, paloalto, windows
 
 class SoarError(Exception):
@@ -150,6 +146,26 @@ def execute_soar_action(*, device_ip: str, action_type: str, parameters: dict, r
             if not hasattr(vendor_module, "open_port"):
                 raise SoarError(f"vendor module {vendor_name} does not support open_port yet.")
             result = vendor_module.open_port(device_ip, token, port, protocol)
+        elif action_type == "unblock_ip":
+            target_ip = str(parameters.get("target_ip", "")).strip()
+            if not hasattr(vendor_module, "unblock_ip"):
+                raise SoarError(f"vendor module {vendor_name} does not support unblock_ip yet.")
+            result = vendor_module.unblock_ip(device_ip, token, target_ip)
+        elif action_type == "quarantine_mac_address":
+            mac_address = str(parameters.get("mac_address", "")).strip()
+            if not hasattr(vendor_module, "quarantine_mac_address"):
+                raise SoarError(f"vendor module {vendor_name} does not support quarantine_mac_address yet.")
+            result = vendor_module.quarantine_mac_address(device_ip, token, mac_address)
+        elif action_type == "kill_process":
+            pid_or_name = str(parameters.get("pid", parameters.get("pid_or_name", ""))).strip()
+            if not hasattr(vendor_module, "kill_process"):
+                raise SoarError(f"vendor module {vendor_name} does not support kill_process yet.")
+            result = vendor_module.kill_process(device_ip, token, pid_or_name)
+        elif action_type == "quarantine_file":
+            file_path = str(parameters.get("file_path", "")).strip()
+            if not hasattr(vendor_module, "quarantine_file"):
+                raise SoarError(f"vendor module {vendor_name} does not support quarantine_file yet.")
+            result = vendor_module.quarantine_file(device_ip, token, file_path)
         else:
             raise SoarError(f"Unsupported action_type: {action_type}")
 
@@ -160,6 +176,65 @@ def execute_soar_action(*, device_ip: str, action_type: str, parameters: dict, r
         update_soar_action_result(action_id, status="failed", error=err)
         return ActionResult(False, action_id, "failed", err, error=err)
 
+def execute_alert_mitigations(alert_id: int) -> list[dict]:
+    # Fetch the alert to get mitigations and affected devices
+    from ..database.db import get_alert
+    import json
+    
+    alert = get_alert(alert_id)
+    if not alert:
+        return []
+        
+    mitigations = alert.get("mitigations", [])
+    if not mitigations:
+        return []
+        
+    # In a real environment, you'd parse out *which* SOAR action and *which* device.
+    # We will do a generic block_ip across firewalls if the mitigation involves block/close.
+    # Note: A real mapping requires deeper string/regex parsing of "command" or the LLM explicitly defining `action_type`.
+    
+    targets = [ip for ip in (alert.get("affected_devices") or []) if isinstance(ip, str) and ip.strip()]
+    if not targets:
+        return []
+
+    all_devices = get_devices_list()
+    supported_firewalls = [
+        d for d in all_devices 
+        if str(d.get("vendor", "")).lower() in ("fortinet", "palo alto")
+    ]
+    
+    if not supported_firewalls:
+        return []
+
+    out: list[dict] = []
+    
+    # Very rudimentary execution based on the existence of mitigations
+    # Realistically we'd map "block_ip" based on `command` text.
+    has_block = any("block" in str(m.get("command", "")).lower() or "deny" in str(m.get("description", "")).lower() for m in mitigations)
+    
+    if has_block:
+        for fw in supported_firewalls:
+            for target_ip in targets:
+                res = execute_soar_action(
+                    device_ip=fw["ip"],
+                    action_type="block_ip",
+                    parameters={"target_ip": target_ip},
+                    requested_by="api",
+                    source=f"manual-resolve:alert#{alert_id}",
+                )
+                out.append(
+                    {
+                        "alert_id": alert_id,
+                        "firewall_ip": fw["ip"],
+                        "target_ip": target_ip,
+                        "action_id": res.action_id,
+                        "ok": res.ok,
+                        "status": res.status,
+                        "summary": res.summary,
+                        "error": res.error,
+                    }
+                )
+    return out
 
 def auto_respond_to_alert(*, alert_id: int, severity: str, affected_devices: list[str] | None) -> list[dict]:
     if not SOAR_AUTO_RESPONSE_ENABLED:

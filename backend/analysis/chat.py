@@ -5,11 +5,8 @@ import re
 import threading
 from datetime import datetime
 
-from ..config import (
-    OPENAI_CLIENT,
-    OPENAI_MODEL_REASONING,
-)
-from ..database.db import get_alerts, get_alerts_since, get_devices_list, get_log_stats
+from ..config import (OPENAI_CLIENT, OPENAI_MODEL_REASONING)
+from ..database.db import get_alerts_since, get_devices_list, get_log_stats
 from ..services.soar import execute_soar_action
 
 _CLIENT: object | None = OPENAI_CLIENT
@@ -127,6 +124,90 @@ _TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "unblock_ip",
+            "description": "Issue a command to unblock or remove quarantine for a target IP on a firewall or network device.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_ip": {
+                        "type": "string",
+                        "description": "The target IP address to unblock."
+                    },
+                    "device_ip": {
+                        "type": "string",
+                        "description": "The IP address of the device to run the command on (e.g. firewall or windows PC)."
+                    }
+                },
+                "required": ["target_ip", "device_ip"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "quarantine_mac_address",
+            "description": "Issue a command to quarantine a malicious MAC address on a specific network device.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mac_address": {
+                        "type": "string",
+                        "description": "The MAC address to quarantine."
+                    },
+                    "device_ip": {
+                        "type": "string",
+                        "description": "The IP address of the device to run the command on."
+                    }
+                },
+                "required": ["mac_address", "device_ip"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "kill_process",
+            "description": "Issue a command to kill a malicious process by its PIP on a Windows machine.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pid": {
+                        "type": "integer",
+                        "description": "The PID of the process to kill."
+                    },
+                    "device_ip": {
+                        "type": "string",
+                        "description": "The IP address of the Windows machine."
+                    }
+                },
+                "required": ["pid", "device_ip"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "quarantine_file",
+            "description": "Issue a command to quarantine a malicious file by its path on a Windows machine, removing its read/execute permissions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "The absolute path of the file to quarantine."
+                    },
+                    "device_ip": {
+                        "type": "string",
+                        "description": "The IP address of the Windows machine."
+                    }
+                },
+                "required": ["file_path", "device_ip"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "query_alerts",
             "description": "Get recent threats or alerts. Provide a timeframe in minutes.",
             "parameters": {
@@ -194,8 +275,8 @@ _IP_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
 _SOAR_CONFIRM_PREFIX = "SOAR_CONFIRM::"
 _SOAR_RESULT_PREFIX = "SOAR_RESULT::"
 
+# Infer likely device IP from recent conversation context.
 def _infer_device_from_history(history: list[dict]) -> str | None:
-    """Infer likely device IP from recent conversation context."""
     devices = get_devices_list()
     valid_ips = {
         str(d.get("ip"))
@@ -251,6 +332,9 @@ def _soar_confirm_message(intent: dict, device_ip: str) -> str:
             "port": intent.get("port"),
             "protocol": intent.get("protocol"),
             "target_ip": intent.get("target_ip"),
+            "mac_address": intent.get("mac_address"),
+            "pid": intent.get("pid"),
+            "file_path": intent.get("file_path"),
         },
         "confirm_hint": "Reply 'confirm' to proceed or 'cancel' to abort.",
     }
@@ -340,6 +424,70 @@ def _execute_soar_intent(intent: dict, device_ip: str) -> str:
                 else f"Failed block_ip {intent['target_ip']} on {device_ip}"
             ),
             details=details or res.summary,
+        )
+
+    if intent["type"] == "unblock_ip":
+        res = execute_soar_action(
+            device_ip=device_ip,
+            action_type="unblock_ip",
+            parameters={"target_ip": intent["target_ip"]},
+            requested_by="chat",
+            source="chat",
+        )
+        return _soar_result_message(
+            ok=res.ok,
+            action_id=res.action_id,
+            status=res.status,
+            summary=f"unblock_ip {intent['target_ip']} on {device_ip}" if res.ok else f"Failed unblock_ip {intent['target_ip']} on {device_ip}",
+            details=res.summary,
+        )
+
+    if intent["type"] == "quarantine_mac_address":
+        res = execute_soar_action(
+            device_ip=device_ip,
+            action_type="quarantine_mac_address",
+            parameters={"mac_address": intent["mac_address"]},
+            requested_by="chat",
+            source="chat",
+        )
+        return _soar_result_message(
+            ok=res.ok,
+            action_id=res.action_id,
+            status=res.status,
+            summary=f"quarantine_mac {intent['mac_address']} on {device_ip}" if res.ok else f"Failed quarantine_mac {intent['mac_address']} on {device_ip}",
+            details=res.summary,
+        )
+
+    if intent["type"] == "kill_process":
+        res = execute_soar_action(
+            device_ip=device_ip,
+            action_type="kill_process",
+            parameters={"pid": intent["pid"]},
+            requested_by="chat",
+            source="chat",
+        )
+        return _soar_result_message(
+            ok=res.ok,
+            action_id=res.action_id,
+            status=res.status,
+            summary=f"kill_process {intent['pid']} on {device_ip}" if res.ok else f"Failed kill_process {intent['pid']} on {device_ip}",
+            details=res.summary,
+        )
+
+    if intent["type"] == "quarantine_file":
+        res = execute_soar_action(
+            device_ip=device_ip,
+            action_type="quarantine_file",
+            parameters={"file_path": intent["file_path"]},
+            requested_by="chat",
+            source="chat",
+        )
+        return _soar_result_message(
+            ok=res.ok,
+            action_id=res.action_id,
+            status=res.status,
+            summary=f"quarantine_file {intent['file_path']} on {device_ip}" if res.ok else f"Failed quarantine_file {intent['file_path']} on {device_ip}",
+            details=res.summary,
         )
 
     return _soar_result_message(ok=False, action_id=0, status="failed", summary="Unsupported SOAR intent")
@@ -476,7 +624,7 @@ def chat(message: str, session_id: str = "default") -> str:
             func_name = tool_call.function.name
             args = json.loads(tool_call.function.arguments)
 
-            if func_name in ("close_port", "block_ip", "open_port"):
+            if func_name in ("close_port", "block_ip", "open_port", "unblock_ip", "quarantine_mac_address", "kill_process", "quarantine_file"):
                 intent = {
                     "type": func_name,
                     "raw_tool_call": tool_call.model_dump(),
