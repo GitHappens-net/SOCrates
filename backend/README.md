@@ -21,44 +21,18 @@ SYSLOG_PORT=514
 API_HOST=0.0.0.0
 API_PORT=5000
 
-# SOAR / FortiGate API (optional)
-FORTIGATE_API_TOKEN=
-FORTIGATE_TOKENS_JSON={"127.0.0.1":"token1"}
-FORTIGATE_VERIFY_SSL=false
-FORTIGATE_TIMEOUT_SECONDS=10
+FORTIGATE_API_TOKEN=... # API token for SOAR commands on fortigate firewalls
+FORTIGATE_IP=...        # Fortigate IP for SOAR commands
 
-# SOAR auto-response (analyzer-driven)
-SOAR_AUTO_RESPONSE_ENABLED=false
-SOAR_AUTO_RESPONSE_MIN_SEVERITY=high
-
-# Chat-triggered SOAR safety controls
-SOAR_CHAT_REQUIRE_CONFIRMATION=true
+WINDOWS_IP=...       # Windows IP for SOAR commands
+WINDOWS_USERNAME=... # Windows username credential for SOAR commands
+WINDOWS_PASSWORD=... # Windows password credential for SOAR commands
 ```
 
 > **Windows note:** UDP port 514 requires an elevated (Administrator) shell.
 > Set `SYSLOG_PORT=5514` in `.env` to avoid this during development.
 
 ---
-
-## Environment Variables
-
-| Variable | Default | Purpose |
-|---------|---------|---------|
-| `OPENAI_API_KEY` | none | OpenAI API key |
-| `OPENAI_MODEL_AGENT` | `gpt-4.1` | Tier-1 triage model |
-| `OPENAI_MODEL_PARSER` | `gpt-4.1` | Normalizer unknown-log template model |
-| `OPENAI_MODEL_REASONING` | `gpt-5.1` | Tier-2 analysis + chat model |
-| `SYSLOG_HOST` | `0.0.0.0` | UDP listener bind host |
-| `SYSLOG_PORT` | `514` | UDP listener bind port |
-| `API_HOST` | `0.0.0.0` | Flask bind host |
-| `API_PORT` | `5000` | Flask bind port |
-| `FORTIGATE_API_TOKEN` | empty | Global FortiGate API token fallback |
-| `FORTIGATE_TOKENS_JSON` | `{}` | Per-device token map: `{"<device_ip>":"<token>"}` |
-| `FORTIGATE_VERIFY_SSL` | `false` | Verify FortiGate TLS certs |
-| `FORTIGATE_TIMEOUT_SECONDS` | `10` | FortiGate API request timeout |
-| `SOAR_AUTO_RESPONSE_ENABLED` | `false` | Enable analyzer-triggered auto-response playbook |
-| `SOAR_AUTO_RESPONSE_MIN_SEVERITY` | `high` | Minimum alert severity to trigger auto-response |
-| `SOAR_CHAT_REQUIRE_CONFIRMATION` | `true` | Require confirm/cancel step before chat SOAR execution |
 
 ### 3. Start the backend
 
