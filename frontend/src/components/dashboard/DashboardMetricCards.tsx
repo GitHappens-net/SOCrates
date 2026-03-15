@@ -5,6 +5,7 @@ export interface DashboardMetricCardProps {
   label: string;
   value: string;
   accent: Accent;
+  onClick?: () => void;
 }
 
 export type Accent = "blue" | "red" | "orange" | "green";
@@ -16,10 +17,13 @@ const COLOR: Record<Accent, { bg: string }> = {
   green: { bg: "bg-green-600/80" },
 };
 
-export default function DashboardMetricCard({ icon: Icon, label, value, accent }: DashboardMetricCardProps) {
+export default function DashboardMetricCard({ icon: Icon, label, value, accent, onClick }: DashboardMetricCardProps) {
   const c = COLOR[accent];
   return (
-    <div className="flex flex-col justify-between rounded-xl border-2 border-gray-700 bg-gray-100 p-5">
+    <div 
+      onClick={onClick}
+      className="flex flex-col justify-between rounded-xl border-2 border-gray-700 bg-gray-100 p-5 cursor-pointer hover:scale-95 transition duration-200"
+    >
       <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${c.bg}`}>
         <Icon className="h-5 w-5 text-white" />
       </div>

@@ -5,17 +5,18 @@ import Header from "@/components/layout/Header";
 import AIChatPanel from "@/components/layout/AIChatPanel";
 
 const PATH_TO_VIEW: Record<string, ViewId> = {
+  "/history": "history",
   "/dashboard": "dashboard",
   "/devices": "devices",
   "/logs": "logs",
-  "/history": "history",
 };
 
 const VIEW_TO_PATH: Record<ViewId, string> = {
+  history: "/history",
   dashboard: "/dashboard",
   devices: "/devices",
   logs: "/logs",
-  history: "/history",
+
 };
 
 export default function Layout() {

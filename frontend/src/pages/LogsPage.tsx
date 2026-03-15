@@ -131,7 +131,7 @@ export default function LogsPage() {
       <div className="flex flex-wrap items-center gap-4 border-b border-gray-200 px-5 py-3">
         <div className="flex items-center gap-2">
           <MonitorDot className="h-5 w-5 text-[#5271ff]" />
-          <h3 className="text-md font-unica font-semibold uppercase tracking-wider text-gray-700">
+          <h3 className="text-lg font-unica font-semibold uppercase tracking-wider text-gray-700">
             All Logs
           </h3>
         </div>

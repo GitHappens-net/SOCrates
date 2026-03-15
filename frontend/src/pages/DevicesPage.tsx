@@ -286,10 +286,10 @@ export default function DevicesPage() {
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
       {/* Network map card */}
-      <div className="rounded-xl border-2 border-gray-700 bg-white p-5">
+      <div className="rounded-xl border-2 border-gray-700 bg-white p-5 pt-3">
         <div className="mb-3 flex items-center gap-2">
           <Network className="h-5 w-5 text-[#5271ff]" />
-          <h3 className="text-md font-unica font-semibold uppercase tracking-wider text-gray-700">
+          <h3 className="text-lg font-unica font-semibold uppercase tracking-wider text-gray-700">
             Network Topology
           </h3>
         </div>

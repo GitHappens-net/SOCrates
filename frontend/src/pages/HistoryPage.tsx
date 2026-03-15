@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ShieldAlert } from "lucide-react";
+import { ChartColumn } from "lucide-react";
 import { useAlerts } from "@/hooks/useApiData";
 import HistoryAlertItem from "@/components/history/HistoryAlertItem";
 
@@ -12,9 +12,9 @@ export default function HistoryPage() {
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
       <div className="flex items-center gap-3 rounded-t-xl border-2 border-gray-700 bg-white px-5 py-3">
-        <ShieldAlert className="h-5 w-5 text-red-600" />
+        <ChartColumn className="h-5 w-5 text-[#5271ff]" />
         <h3 className="text-lg font-unica font-semibold uppercase tracking-wider text-gray-700">
-          AI ANALYSIS HISTORY
+          AI ANALYSIS
         </h3>
         <div className="ml-auto flex items-center gap-2">
           {["all", "open", "acknowledged", "resolved", "dismissed"].map((s) => (

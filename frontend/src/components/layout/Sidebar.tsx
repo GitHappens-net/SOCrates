@@ -1,4 +1,4 @@
-import { LayoutDashboard, MonitorDot, Network, History } from "lucide-react";
+import { LayoutDashboard, MonitorDot, Network, ChartColumn } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type ViewId = "dashboard" | "devices" | "logs" | "history";
@@ -16,9 +16,9 @@ interface SidebarProps {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "dashboard", icon: LayoutDashboard, label: "Dashboard"      },
+  { id: "history",   icon: ChartColumn,         label: "AI Analysis"},
   { id: "devices",   icon: Network,         label: "Devices"        },
   { id: "logs",      icon: MonitorDot,      label: "Logs"           },
-  { id: "history",   icon: History,         label: "Analysis History"},
 ];
 
 export default function Sidebar({ activeView, onNavigate }: SidebarProps) {
