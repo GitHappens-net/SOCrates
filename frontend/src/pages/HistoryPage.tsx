@@ -1,13 +1,32 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ChartColumn } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { useAlerts } from "@/hooks/useApiData";
 import HistoryAlertItem from "@/components/history/HistoryAlertItem";
 
 export default function HistoryPage() {
+  const location = useLocation();
   const { alerts, loading, reload } = useAlerts();
   const [filter, setFilter] = useState<string>("all");
+  const [severityFilter, setSeverityFilter] = useState<string>("all");
 
-  const filtered = filter === "all" ? alerts : alerts.filter((a) => a.status === filter);
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const statusParam = params.get("status");
+    if (statusParam && ["all", "open", "resolved", "dismissed"].includes(statusParam)) {
+      setFilter(statusParam);
+    }
+    const severityParam = params.get("severity");
+    if (severityParam && ["all", "critical", "high", "medium", "low"].includes(severityParam)) {
+      setSeverityFilter(severityParam);
+    }
+  }, [location.search]);
+
+  const filtered = alerts.filter((a) => {
+    const passStatus = filter === "all" || a.status === filter;
+    const passSeverity = severityFilter === "all" || a.severity.toLowerCase() === severityFilter;
+    return passStatus && passSeverity;
+  });
 
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
@@ -16,20 +35,45 @@ export default function HistoryPage() {
         <h3 className="text-lg font-unica font-semibold uppercase tracking-wider text-gray-700">
           AI ANALYSIS
         </h3>
-        <div className="ml-auto flex items-center gap-2">
-          {["all", "open", "resolved", "dismissed"].map((s) => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={`rounded-full px-2.5 py-1 text-[12px] font-semibold capitalize transition ${
-                filter === s ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
+        
+        <div className="ml-auto flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="severity-hist" className="text-xs font-semibold text-gray-600 uppercase">Severity:</label>
+            <select
+              id="severity-hist"
+              className="rounded-full border border-gray-300 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-700 focus:border-gray-500 focus:outline-none capitalize"
+              value={severityFilter}
+              onChange={(e) => setSeverityFilter(e.target.value)}
             >
-              {s}
-            </button>
-          ))}
+              <option value="all">All</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5 border-l border-gray-200 pl-4">
+            <label className="text-xs font-semibold text-gray-600 uppercase">Status:</label>
+            <div className="flex items-center gap-1">
+              {["all", "open", "resolved", "dismissed"].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setFilter(s)}
+                  className={`rounded-full px-2.5 py-1 text-[12px] font-semibold capitalize transition ${
+                    filter === s ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-        <span className="text-xs text-gray-400">{loading ? "Loading..." : `${filtered.length} alerts`}</span>
+        
+        <span className="ml-2 text-xs font-medium text-gray-400 min-w-max border-l border-gray-200 pl-4">
+          {loading ? "Loading..." : `${filtered.length} matching`}
+        </span>
       </div>
 
       <div className="space-y-3">

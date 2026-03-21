@@ -43,4 +43,4 @@ services:
     volumes:
       - ./tools:/app/tools
       - ./data:/app/data:ro
-    command: ["python", "-m", "tools.Log_Stream_Generator", "--parquet", "data/cic-collection.parquet", "--syslog-host", "backend", "--max-flows", "5000", "--speed", "1", "--demo"]
+    command: ["python", "-m", "tools.Log_Stream_Generator", "--parquet", "data/cic-collection.parquet", "--syslog-host", "backend", "--max-flows", "1597", "--speed", "5", "--demo"]

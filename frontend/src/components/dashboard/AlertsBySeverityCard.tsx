@@ -1,5 +1,6 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import type { TooltipProps } from "recharts";
+import { useNavigate } from "react-router-dom";
 
 interface SeveritySlice {
   name: string;
@@ -24,6 +25,8 @@ function PieTooltip({ active, payload }: TooltipProps<number, string>) {
 }
 
 export default function AlertsBySeverityCard({ data, totalAlerts }: AlertsBySeverityCardProps) {
+  const navigate = useNavigate();
+
   return (
     <div className="flex flex-col rounded-xl border-2 border-gray-700 bg-gray-100 p-5">
       <h3 className="mb-2 text-md font-unica font-semibold uppercase tracking-wider text-gray-700">
@@ -46,7 +49,13 @@ export default function AlertsBySeverityCard({ data, totalAlerts }: AlertsBySeve
                   animationDuration={800}
                 >
                   {data.map((entry, idx) => (
-                    <Cell key={idx} fill={entry.fill} stroke="transparent" />
+                    <Cell 
+                      key={idx} 
+                      fill={entry.fill} 
+                      stroke="transparent" 
+                      onClick={() => navigate(`/history?severity=${entry.name.toLowerCase()}&status=open`)}
+                      className="cursor-pointer hover:opacity-80 transition-opacity"
+                    />
                   ))}
                 </Pie>
                 <Tooltip content={<PieTooltip />} />
@@ -63,7 +72,11 @@ export default function AlertsBySeverityCard({ data, totalAlerts }: AlertsBySeve
       </div>
       <div className="mt-3 flex justify-center flex-wrap gap-x-4 gap-y-1.5 text-xs">
         {data.map((t) => (
-          <span key={t.name} className="capitalize text-sm flex items-center gap-1.5 text-gray-700">
+          <span 
+            key={t.name} 
+            className="capitalize text-sm flex items-center gap-1.5 text-gray-700 cursor-pointer hover:underline"
+            onClick={() => navigate(`/history?severity=${t.name.toLowerCase()}&status=open`)}
+          >
             <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: t.fill }} />
             {t.name}
           </span>

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MonitorDot, ChevronDown, ChevronUp } from "lucide-react";
-import { useLogs } from "@/hooks/useApiData";
+import { useLocation } from "react-router-dom";
+import { useLogs, useStats } from "@/hooks/useApiData";
 import type { ApiLog } from "@/api/types";
 
 /* Severity helpers */
@@ -105,15 +106,46 @@ function LogRow({ log }: { log: ApiLog }) {
 
 /* Main Logs View */
 export default function LogsPage() {
+  const location = useLocation();
   const [filterSeverity, setFilterSeverity] = useState<string>("all");
+  const [filterVendor, setFilterVendor] = useState<string>("all");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const [limit, setLimit] = useState<number>(200);
 
-  const { logs, loading } = useLogs(limit, 5000);
+  const vendorSelectRef = useRef<HTMLSelectElement>(null);
+
+  const { stats } = useStats();
+  const availableVendors = stats ? Object.keys(stats.by_vendor).sort() : [];
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const sev = params.get("severity");
+    if (sev) {
+      setFilterSeverity(sev);
+    }
+    const vend = params.get("vendor");
+    if (vend) {
+      setFilterVendor(vend);
+    }
+    
+    // Check if we should focus the vendor dropdown automatically
+    const focusParam = params.get("focus");
+    if (focusParam === "vendor") {
+      setTimeout(() => {
+        vendorSelectRef.current?.focus();
+      }, 100);
+    }
+  }, [location.search]);
+
+  const { logs, loading } = useLogs(limit, 1000);
 
   // Filter logs
   const filteredLogs = logs.filter((log) => {
+    if (filterVendor !== "all" && log.vendor.toLowerCase() !== filterVendor.toLowerCase()) return false;
     if (filterSeverity === "all") return true;
+    if (filterSeverity === "high-critical") {
+      return sevLabel(log.severity) === "high" || sevLabel(log.severity) === "critical";
+    }
     return sevLabel(log.severity) === filterSeverity;
   });
 
@@ -138,6 +170,22 @@ export default function LogsPage() {
 
         <div className="ml-auto flex items-center gap-4 text-xs text-gray-700">
           <div className="flex items-center gap-1.5">
+            <label htmlFor="vendor" className="font-medium">Vendor:</label>
+            <select
+              id="vendor"
+              ref={vendorSelectRef}
+              className="rounded-lg border-2 border-gray-300 px-2 py-1 focus:border-gray-700 focus:outline-none capitalize focus:ring-2 focus:ring-[#5271ff]/50"
+              value={filterVendor}
+              onChange={(e) => setFilterVendor(e.target.value)}
+            >
+              <option value="all">All Vendors</option>
+              {availableVendors.map((v) => (
+                <option key={v} value={v.toLowerCase()}>{v}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5">
             <label htmlFor="severity" className="font-medium">Severity:</label>
             <select
               id="severity"
@@ -146,6 +194,7 @@ export default function LogsPage() {
               onChange={(e) => setFilterSeverity(e.target.value)}
             >
               <option value="all">All</option>
+              <option value="high-critical">High / Critical</option>
               <option value="critical">Critical</option>
               <option value="high">High</option>
               <option value="medium">Medium</option>
@@ -170,7 +219,7 @@ export default function LogsPage() {
           </div>
 
           <div className="flex items-center gap-1.5">
-            <label htmlFor="sort" className="font-medium">Time:</label>
+            <label htmlFor="sort" className="font-medium">Order:</label>
             <select
               id="sort"
               className="rounded-lg border-2 border-gray-300 px-2 py-1 focus:border-gray-700 focus:outline-none"

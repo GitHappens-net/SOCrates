@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
 import ipaddress
+import re
+from ..database.db import get_alert
 from dataclasses import dataclass
 from ..config import (
     FORTIGATE_API_TOKEN,
@@ -178,8 +180,7 @@ def execute_soar_action(*, device_ip: str, action_type: str, parameters: dict, r
 
 def execute_alert_mitigations(alert_id: int) -> list[dict]:
     # Fetch the alert to get mitigations and affected devices
-    from ..database.db import get_alert
-    import json
+    
     
     alert = get_alert(alert_id)
     if not alert:
@@ -188,12 +189,16 @@ def execute_alert_mitigations(alert_id: int) -> list[dict]:
     mitigations = alert.get("mitigations", [])
     if not mitigations:
         return []
-        
-    # In a real environment, you'd parse out *which* SOAR action and *which* device.
-    # We will do a generic block_ip across firewalls if the mitigation involves block/close.
-    # Note: A real mapping requires deeper string/regex parsing of "command" or the LLM explicitly defining `action_type`.
     
-    targets = [ip for ip in (alert.get("affected_devices") or []) if isinstance(ip, str) and ip.strip()]
+    # We will aggregate all mitigating descriptions/commands
+    mitigations_text = " ".join([m.get("description", "") + " " + m.get("command", "") for m in mitigations])
+    
+    ips_to_block = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', mitigations_text)
+    
+    # Exclude internal/private ranges and the device itself (you can expand this as needed)
+    EXCLUDE = {"127.0.0.1", "192.168.1.101", "0.0.0.0"}
+    targets = list(set([ip for ip in ips_to_block if ip not in EXCLUDE]))
+    
     if not targets:
         return []
 
@@ -208,8 +213,6 @@ def execute_alert_mitigations(alert_id: int) -> list[dict]:
 
     out: list[dict] = []
     
-    # Very rudimentary execution based on the existence of mitigations
-    # Realistically we'd map "block_ip" based on `command` text.
     has_block = any("block" in str(m.get("command", "")).lower() or "deny" in str(m.get("description", "")).lower() for m in mitigations)
     
     if has_block:
@@ -245,7 +248,20 @@ def auto_respond_to_alert(*, alert_id: int, severity: str, affected_devices: lis
     if sev_rank < min_rank:
         return []
 
-    targets = [ip for ip in (affected_devices or []) if isinstance(ip, str) and ip.strip()]
+    alert = get_alert(alert_id)
+    if not alert:
+        return []
+        
+    mitigations = alert.get("mitigations", [])
+    if not mitigations:
+        return []
+    
+    mitigations_text = " ".join([m.get("description", "") + " " + m.get("command", "") for m in mitigations])
+    ips_to_block = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', mitigations_text)
+    
+    EXCLUDE = {"127.0.0.1", "192.168.1.101", "0.0.0.0"}
+    targets = list(set([ip for ip in ips_to_block if ip not in EXCLUDE]))
+    
     if not targets:
         return []
 

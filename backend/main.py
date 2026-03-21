@@ -24,6 +24,7 @@ def _run_syslog() -> None:
                 source_ip = addr[0]
                 import re
                 
+                print(f"[syslog] received:{raw_syslog}")
                 # Make sure we only override if the hostname looks exactly like a valid IPv4 address
                 # Real devices will send hostnames (e.g. <134>FW-1: ) or won't match the strict \d+\.\d+\.\d+\.\d+ format.
                 match = re.match(r"^<\d+>(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\s*", raw_syslog)

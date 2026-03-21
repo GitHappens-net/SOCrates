@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Network, MonitorDot, ChevronRight } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { useDevices, useDeviceLogs } from "@/hooks/useApiData";
 import { getVendorColor } from "@/utils/colors";
 import type { ApiDevice, ApiLog } from "@/api/types";
@@ -214,58 +215,155 @@ function NetworkMap({ devices, selected, onSelect }: MapProps) {
 }
 
 /* Device Log Table */
-function DeviceLogTable({ logs, loading }: { logs: ApiLog[]; loading: boolean }) {
-  if (loading) return <p className="p-4 text-sm text-gray-400">Loading logs...</p>;
-  if (logs.length === 0) return <p className="p-4 text-sm text-gray-400">No logs for this device.</p>;
+function DeviceLogTable({ logs, loading, limit, setLimit }: { logs: ApiLog[]; loading: boolean, limit: number, setLimit: (limit: number) => void }) {
+  const [filterSeverity, setFilterSeverity] = useState<string>("all");
+  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+
+  const filteredLogs = logs.filter((log) => {
+    if (filterSeverity === "all") return true;
+    const sevLabel = log.severity <= 3 ? "high" : log.severity <= 4 ? "medium" : "low";
+    if (filterSeverity === "high-critical") return sevLabel === "high"; // Since high means <=3
+    return sevLabel === filterSeverity;
+  });
+
+  const sortedLogs = [...filteredLogs].sort((a, b) => {
+    const timeA = new Date(a.received_at).getTime();
+    const timeB = new Date(b.received_at).getTime();
+    if (sortOrder === "asc") return timeA - timeB;
+    return timeB - timeA;
+  });
 
   return (
-    <div className="max-h-[300px] overflow-y-auto">
-      <table className="w-full text-xs">
-        <thead className="sticky top-0 bg-white">
-          <tr className="border-b border-gray-200 text-left text-gray-500">
-            <th className="px-4 py-2 font-medium">Time</th>
-            <th className="px-3 py-2 font-medium">Vendor</th>
-            <th className="px-3 py-2 font-medium">Severity</th>
-            <th className="px-3 py-2 font-medium">Action</th>
-            <th className="px-3 py-2 font-medium">Service</th>
-            <th className="px-3 py-2 font-medium">Dst IP</th>
-          </tr>
-        </thead>
-        <tbody>
-          {logs.map((log) => {
-            const flow = extractFlowFields(log);
-            return (
-              <tr key={log.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="whitespace-nowrap px-4 py-2 font-mono text-gray-500">{log.received_at}</td>
-                <td className="px-3 py-2">{log.vendor}</td>
-                <td className="px-3 py-2">
-                  <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${log.severity <= 3 ? "bg-red-100 text-red-700" : log.severity <= 4 ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
-                    {log.severity <= 3 ? "high" : log.severity <= 4 ? "medium" : "low"}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-gray-700">{flow.action}</td>
-                <td className="px-3 py-2 text-gray-700">{flow.service}</td>
-                <td className="px-3 py-2 font-mono text-gray-700">{flow.dstip}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="flex flex-col h-[500px]">
+      <div className="flex flex-wrap items-center gap-4 border-b border-gray-200 px-4 py-2 text-xs text-gray-700 bg-gray-50 flex-none">
+        <div className="flex items-center gap-1.5">
+          <label htmlFor="severity-dev" className="font-medium">Severity:</label>
+          <select
+            id="severity-dev"
+            className="rounded border border-gray-300 px-1 py-0.5 focus:border-gray-700 focus:outline-none"
+            value={filterSeverity}
+            onChange={(e) => setFilterSeverity(e.target.value)}
+          >
+            <option value="all">All</option>
+            <option value="high-critical">High / Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <label htmlFor="limit-dev" className="font-medium">Show:</label>
+          <select
+            id="limit-dev"
+            className="rounded border border-gray-300 px-1 py-0.5 focus:border-gray-700 focus:outline-none"
+            value={limit}
+            onChange={(e) => setLimit(Number(e.target.value))}
+          >
+            <option value={50}>Last 50</option>
+            <option value={100}>Last 100</option>
+            <option value={200}>Last 200</option>
+            <option value={500}>Last 500</option>
+            <option value={1000}>Last 1000</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <label htmlFor="sort-dev" className="font-medium">Order:</label>
+          <select
+            id="sort-dev"
+            className="rounded border border-gray-300 px-1 py-0.5 focus:border-gray-700 focus:outline-none"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as "desc" | "asc")}
+          >
+            <option value="desc">Newest First</option>
+            <option value="asc">Oldest First</option>
+          </select>
+        </div>
+        <span className="ml-auto font-medium text-gray-500">{loading ? "Loading..." : `${sortedLogs.length} matching`}</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {logs.length === 0 && !loading ? (
+          <p className="p-4 text-sm text-gray-400">No logs for this device.</p>
+        ) : (
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-white shadow-sm z-10">
+            <tr className="border-b border-gray-200 text-left text-gray-500">
+              <th className="px-4 py-2 font-medium">Time</th>
+              <th className="px-3 py-2 font-medium">Vendor</th>
+              <th className="px-3 py-2 font-medium">Severity</th>
+              <th className="px-3 py-2 font-medium">Action</th>
+              <th className="px-3 py-2 font-medium">Service</th>
+              <th className="px-3 py-2 font-medium">Dst IP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedLogs.map((log) => {
+              const flow = extractFlowFields(log);
+              return (
+                <tr key={log.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="whitespace-nowrap px-4 py-2 font-mono text-gray-500">{log.received_at}</td>
+                  <td className="px-3 py-2">{log.vendor}</td>
+                  <td className="px-3 py-2">
+                    <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${log.severity <= 3 ? "bg-red-100 text-red-700" : log.severity <= 4 ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
+                      {log.severity <= 3 ? "high" : log.severity <= 4 ? "medium" : "low"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-gray-700">{flow.action}</td>
+                  <td className="px-3 py-2 text-gray-700">{flow.service}</td>
+                  <td className="px-3 py-2 font-mono text-gray-700">{flow.dstip}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        )}
+      </div>
     </div>
   );
 }
 
 /* Main Devices View */
 export default function DevicesPage() {
+  const location = useLocation();
   const { devices, loading } = useDevices();
   const [selectedIp, setSelectedIp] = useState<string | null>(null);
-  const { logs: deviceLogs, loading: logsLoading } = useDeviceLogs(selectedIp);
+  const [limit, setLimit] = useState<number>(200);
+  const { logs: deviceLogs, loading: logsLoading } = useDeviceLogs(selectedIp, limit);
+  const detailsRef = useRef<HTMLDivElement>(null);
+  const hasScrolledRef = useRef(false);
 
   const selectedDevice = devices.find((d) => d.ip === selectedIp);
+
+  // Sync with URL parameter
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const ip = params.get("ip");
+    if (ip) {
+      handleSelectDevice(ip);
+    }
+  }, [location.search, devices]);
+
+  // Scroll to details on first visual selection
+  useEffect(() => {
+    if (selectedDevice && !hasScrolledRef.current && detailsRef.current) {
+      // Small timeout to allow the element to render before scrolling
+      setTimeout(() => {
+        detailsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        hasScrolledRef.current = true;
+      }, 50);
+    }
+  }, [selectedDevice]);
 
   function handleSelectDevice(ip: string | null) {
     setSelectedIp(ip);
     window.dispatchEvent(new CustomEvent("CHAT_SET_TARGET", { detail: ip }));
+    
+    // Reset scroll if manually clicking a new device map node after the first automatically scrolled selection
+    if (ip && ip !== selectedIp) {
+      hasScrolledRef.current = false;
+    }
   }
 
   // Clear target context on unmount or navigation
@@ -287,7 +385,7 @@ export default function DevicesPage() {
     <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
       {/* Network map card */}
       <div className="rounded-xl border-2 border-gray-700 bg-white p-5 pt-3">
-        <div className="mb-3 flex items-center gap-2">
+        <div className="mb-3 flex items-center gap-2 flex-none">
           <Network className="h-5 w-5 text-[#5271ff]" />
           <h3 className="text-lg font-unica font-semibold uppercase tracking-wider text-gray-700">
             Network Topology
@@ -311,8 +409,8 @@ export default function DevicesPage() {
 
       {/* Device detail + logs */}
       {selectedDevice && (
-        <div className="rounded-xl border-2 border-gray-700 bg-white">
-          <div className="flex items-center gap-2 border-b border-gray-200 px-5 py-3">
+        <div ref={detailsRef} className="rounded-xl border-2 border-gray-700 bg-white overflow-hidden flex flex-col scroll-mt-[60vh]">
+          <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-5 py-3 flex-none">
             <MonitorDot className="h-4 w-4" style={{ color: getVendorColor(selectedDevice.vendor) }} />
             <h3 className="text-sm font-semibold text-gray-800">
               {selectedDevice.hostname ?? selectedDevice.ip}
@@ -322,11 +420,11 @@ export default function DevicesPage() {
             <span className="ml-2 rounded bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
               {selectedDevice.vendor} / {selectedDevice.device_type}
             </span>
-            <span className="ml-auto text-[10px] text-gray-400">
+            <span className="ml-auto text-[10px] text-gray-400 w-full sm:w-auto text-right">
               Last seen {selectedDevice.last_seen}
             </span>
           </div>
-          <DeviceLogTable logs={deviceLogs} loading={logsLoading} />
+          <DeviceLogTable logs={deviceLogs} loading={logsLoading} limit={limit} setLimit={setLimit} />
         </div>
       )}
     </div>
