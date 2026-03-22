@@ -1,16 +1,15 @@
-"""Output sinks: stdout, file, syslog UDP, HTTP POST."""
 from __future__ import annotations
-
 import json
 import sys
+import socket
 from pathlib import Path
+import urllib.request
+import urllib.error
 
 from .format_paloalto import PA_CSV_HEADER
 
-
 def sink_stdout(line: str) -> None:
     print(line)
-
 
 def sink_file(path: Path, fmt: str):
     mode = "w" if fmt == "paloalto" else "a"
@@ -24,11 +23,8 @@ def sink_file(path: Path, fmt: str):
         fh.flush()
     return _write
 
-
 def sink_syslog(host: str = "127.0.0.1", port: int = 514, source_ip: str | None = None):
-    import socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    
     sent_count = 0
 
     def _send_syslog(line: str) -> None:
@@ -50,11 +46,7 @@ def sink_syslog(host: str = "127.0.0.1", port: int = 514, source_ip: str | None 
 
     return _send_syslog
 
-
 def sink_http(endpoint: str):
-    import urllib.request
-    import urllib.error
-
     def _post(line: str) -> None:
         data = json.dumps({"log": line}).encode("utf-8")
         req = urllib.request.Request(

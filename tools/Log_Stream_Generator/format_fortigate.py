@@ -1,15 +1,11 @@
-"""FortiGate native key=value log formatter."""
 from __future__ import annotations
-
 import hashlib
 from datetime import datetime
-
 import pandas as pd
 
 from .identity import _synth_ip, _synth_mac, _synth_country
 
-# ── FortiGate field mappings ──────────────────────────────────────────────
-
+# FortiGate field mappings
 _FG_ACTION: dict[str, str] = {
     "Benign":             "close",
     "Botnet":             "deny",
@@ -100,7 +96,6 @@ _FG_INTERFACES = [
     ("ssl.root", "port2"),  # VPN → WAN
 ]
 
-
 def _fg_logid(label: str) -> str:
     if label in _FG_UTM:
         return _FG_UTM[label][1]
@@ -108,15 +103,12 @@ def _fg_logid(label: str) -> str:
         return "0000000013"  # traffic/forward
     return "0000000020"      # traffic/forward deny
 
-
 def _fg_well_known_port(h_byte: int) -> int:
     ports = [22, 53, 80, 443, 445, 993, 3389, 8080, 21, 25, 8443, 123]
     return ports[h_byte % len(ports)]
 
-
 def _fg_ephemeral_port(h_byte: int) -> int:
     return 49152 + h_byte * 127 % 16383
-
 
 def _threat_weight(label: str) -> int:
     low = label.lower()
@@ -132,14 +124,8 @@ def _threat_weight(label: str) -> int:
         return 20
     return 10
 
-
-# ── Formatter ─────────────────────────────────────────────────────────────
-
+# Formatter
 def format_fortigate(row: pd.Series, ts: datetime, flow_id: int) -> str:
-    """
-    Produce a single FortiGate traffic log line in native key=value format.
-    Matches the exact format from real FortiGate REST API / syslog output.
-    """
     label = row["Label"]
     h = hashlib.md5(f"{flow_id}".encode(), usedforsecurity=False).digest()
 

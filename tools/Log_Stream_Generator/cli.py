@@ -1,12 +1,9 @@
-"""CLI parser and main entry point."""
 from __future__ import annotations
-
 import argparse
 import random
 import sys
 import textwrap
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
 
@@ -14,7 +11,6 @@ from .engine import stream_logs
 from .normalise import normalise_dataframe
 from .server import run_server
 from .sinks import sink_file, sink_http, sink_stdout, sink_syslog
-
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -73,7 +69,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=None,
                    help="Random seed for reproducibility.")
     return p
-
 
 def main() -> None:
     args = build_parser().parse_args()

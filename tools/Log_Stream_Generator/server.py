@@ -1,12 +1,10 @@
-"""REST API server mode — mimics a FortiGate / PaloAlto log retrieval API."""
 from __future__ import annotations
-
 import json
 import sys
 import threading
 from typing import TYPE_CHECKING
-
 import pandas as pd
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from .engine import stream_logs
 from .format_paloalto import PA_CSV_HEADER
@@ -14,16 +12,7 @@ from .format_paloalto import PA_CSV_HEADER
 if TYPE_CHECKING:
     pass
 
-
-def run_server(df: pd.DataFrame, host: str, port: int, fmt: str,
-               speed: float, max_flows: int | None, seed: int | None) -> None:
-    """
-    Start a simple HTTP server that mimics a FortiGate / PaloAlto log
-    retrieval API.  The SOCrates backend can poll GET /api/v2/log/traffic
-    to receive batches of logs, just like a real FortiGate REST API.
-    """
-    from http.server import HTTPServer, BaseHTTPRequestHandler
-
+def run_server(df: pd.DataFrame, host: str, port: int, fmt: str, speed: float, max_flows: int | None, seed: int | None) -> None:
     log_buffer: list[str] = []
     buffer_lock = threading.Lock()
     gen_done = threading.Event()

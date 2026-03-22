@@ -1,17 +1,13 @@
-"""PaloAlto CSV syslog log formatter."""
 from __future__ import annotations
-
 import hashlib
 import uuid
 from datetime import datetime
-
 import pandas as pd
 
 from .identity import _synth_ip, _synth_country
 from .format_fortigate import _fg_ephemeral_port, _fg_well_known_port
 
-# ── PaloAlto field mappings ───────────────────────────────────────────────
-
+# PaloAlto field mappings
 _PA_ACTION: dict[str, str] = {
     "Benign": "allow",
     "Botnet": "deny",
@@ -61,12 +57,8 @@ PA_CSV_HEADER = (
     "rule_uuid"
 )
 
-# ── Formatter ─────────────────────────────────────────────────────────────
-
+# Formatter
 def format_paloalto_csv(row: pd.Series, ts: datetime, flow_id: int) -> str:
-    """
-    Produce a PaloAlto Traffic log in CSV format (matches PA syslog output).
-    """
     label = row["Label"]
     h = hashlib.md5(f"{flow_id}".encode(), usedforsecurity=False).digest()
 

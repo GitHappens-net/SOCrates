@@ -1,10 +1,3 @@
-"""
-SOCrates Log Stream Generator
-==============================
-Produces simulated real-time vendor-native firewall logs
-(FortiGate / PaloAlto) from CIC-IDS parquet datasets.
-"""
-
 from .normalise import normalise_dataframe, LABEL_NORMALISATION
 from .identity import _synth_ip, _synth_mac, _synth_country
 from .format_fortigate import format_fortigate

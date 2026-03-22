@@ -1,6 +1,4 @@
-"""Label normalisation for CIC-IDS-2017 / CIC-IDS-Collection datasets."""
 from __future__ import annotations
-
 import pandas as pd
 
 LABEL_NORMALISATION: dict[str, str] = {
@@ -31,7 +29,6 @@ _CLASS_PREFIXES = [
     ("Webattack", "Webattack"), ("Bruteforce", "Bruteforce"),
 ]
 
-
 def _derive_class_label(label: str) -> str:
     if label in LABEL_TO_CLASS:
         return LABEL_TO_CLASS[label]
@@ -39,7 +36,6 @@ def _derive_class_label(label: str) -> str:
         if label.startswith(prefix):
             return cls
     return label
-
 
 def normalise_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()

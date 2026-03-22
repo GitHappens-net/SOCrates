@@ -1,42 +1,24 @@
-"""Timestamp synthesis and core streaming engine."""
 from __future__ import annotations
-
-import random
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Generator
-
 import numpy as np
 import pandas as pd
+import random
+import time
 
 from .format_fortigate import format_fortigate
 from .format_paloalto import format_paloalto_csv
 
-
+# Generate a timestamp for a flow, spaced ~0.3-1.5s apart.
 def generate_flow_timestamp(base: datetime, flow_id: int) -> datetime:
-    """Generate a timestamp for a flow, spaced ~0.3-1.5s apart."""
     avg_gap_sec = random.uniform(0.3, 1.5)
     offset = timedelta(seconds=flow_id * avg_gap_sec)
     return base + offset
 
-
-def stream_logs(
-    df: pd.DataFrame,
-    *,
-    max_flows: int | None = None,
-    speed: float = 1.0,
-    start_time: datetime | None = None,
-    sample_frac: float | None = None,
-    shuffle: bool = True,
-    fmt: str = "fortigate",
-    seed: int | None = None,
-) -> Generator[str, None, None]:
-    """
-    Yield log events (one per flow) in vendor-native format.
-
-    Unlike v1 (which emitted per-packet events), this emits one log line
-    per flow — matching real firewall session logs.
-    """
+def stream_logs(df: pd.DataFrame, *, max_flows: int | None = None, speed: float = 1.0,
+        start_time: datetime | None = None, sample_frac: float | None = None, shuffle: bool = True,
+        fmt: str = "fortigate", seed: int | None = None) -> Generator[str, None, None]:
+    
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
