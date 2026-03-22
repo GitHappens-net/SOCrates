@@ -1,37 +1,12 @@
-#!/usr/bin/env python3
-"""
-FortiGate Demo Syslog Injector
-================================
-Sends realistic FortiGate-formatted syslog messages to your SOC parser
-for demo purposes. Simulates:
-  - Port scan / intrusion attempts
-  - Firewall ALLOW / DENY traffic events
-
-Usage:
-    python fortigate_demo_injector.py
-    python fortigate_demo_injector.py --host 127.0.0.1 --port 514 --scenario all
-    python fortigate_demo_injector.py --scenario portscan --count 20 --delay 0.3
-"""
-
 import socket
 import time
 import random
 import argparse
 import datetime
-from typing import List
 
-# ─────────────────────────────────────────────
-#  CONFIG  (edit these if needed)
-# ─────────────────────────────────────────────
-DEFAULT_HOST  = "127.0.0.1"   # your SOC parser listener IP
-DEFAULT_PORT  = 514            # syslog UDP port
-DEVICE_NAME   = "FortiGate-VM64"
-DEVICE_ID     = "FGVMSLTM26010201"
-VDOM          = "root"
+from config import DEFAULT_HOST, DEFAULT_PORT, DEVICE_NAME, DEVICE_ID, VDOM
 
-# ─────────────────────────────────────────────
-#  REALISTIC DATA POOLS
-# ─────────────────────────────────────────────
+# Realistic Data Pools
 INTERNAL_IPS = [
     "192.168.1.10", "192.168.1.20", "192.168.1.30",
     "192.168.1.50", "192.168.1.100", "192.168.1.105",
@@ -77,16 +52,13 @@ SERVICES_TCP = {
     27017:"MONGODB",1433:"MSSQL",   5900: "VNC",
 }
 
-# ─────────────────────────────────────────────
-#  HELPERS
-# ─────────────────────────────────────────────
+# Helper Functions
 def now_fields():
     now = datetime.datetime.now()
     ts  = int(now.timestamp() * 1e9)
     return now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S"), ts
 
 def send_syslog(host: str, port: int, message: str):
-    """Send a single UDP syslog message."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.sendto(message.encode("utf-8"), (host, port))
 
@@ -102,15 +74,12 @@ def rand_session() -> int:
 def rand_policy() -> int:
     return random.randint(1, 10)
 
-# ─────────────────────────────────────────────
-#  SCENARIO 1 — PORT SCAN / INTRUSION
-# ─────────────────────────────────────────────
+# PORT SCAN / INTRUSION
 def make_portscan_log(attacker_ip: str, victim_ip: str, dst_port: int, action: str = "deny") -> str:
     date, ttime, ts = now_fields()
     service = SERVICES_TCP.get(dst_port, f"tcp/{dst_port}")
     src_port = random.randint(40000, 65000)
     src_country = country_for(attacker_ip)
-    pkt_sent = random.randint(1, 3)
 
     # IPS inline block log (logid 0419016384)
     msg = (
@@ -130,9 +99,7 @@ def make_portscan_log(attacker_ip: str, victim_ip: str, dst_port: int, action: s
     )
     return msg
 
-
 def make_portscan_traffic_log(attacker_ip: str, victim_ip: str, dst_port: int) -> str:
-    """Accompanying traffic log for the scan."""
     date, ttime, ts = now_fields()
     service = SERVICES_TCP.get(dst_port, f"tcp/{dst_port}")
     src_port = random.randint(40000, 65000)
@@ -152,10 +119,7 @@ def make_portscan_traffic_log(attacker_ip: str, victim_ip: str, dst_port: int) -
     )
     return msg
 
-
-# ─────────────────────────────────────────────
-#  SCENARIO 2 — FIREWALL ALLOW / DENY
-# ─────────────────────────────────────────────
+# FIREWALL ALLOW / DENY
 def make_fw_allow_log(src_ip: str, dst_ip: str, dst_port: int) -> str:
     date, ttime, ts = now_fields()
     service = SERVICES_TCP.get(dst_port, f"tcp/{dst_port}")
@@ -183,7 +147,6 @@ def make_fw_allow_log(src_ip: str, dst_ip: str, dst_port: int) -> str:
     )
     return msg
 
-
 def make_fw_deny_log(src_ip: str, dst_ip: str, dst_port: int, reason: str = "policy-violation") -> str:
     date, ttime, ts = now_fields()
     service = SERVICES_TCP.get(dst_port, f"tcp/{dst_port}")
@@ -206,10 +169,7 @@ def make_fw_deny_log(src_ip: str, dst_ip: str, dst_port: int, reason: str = "pol
     )
     return msg
 
-
-# ─────────────────────────────────────────────
-#  SCENARIO RUNNERS
-# ─────────────────────────────────────────────
+# SCENARIO RUNNERS
 def run_portscan(host, port, count, delay):
     print(f"\n🔍 [PORT SCAN] Simulating scan from {count} probe(s)...")
     attacker = random.choice(ATTACKER_IPS)
@@ -231,9 +191,8 @@ def run_portscan(host, port, count, delay):
         time.sleep(delay)
     print(f"   ✅ Sent {count} port scan event pairs.\n")
 
-
 def run_firewall(host, port, count, delay):
-    print(f"\n🛡️  [FIREWALL] Simulating {count} allow/deny events...")
+    print(f"\n[FIREWALL] Simulating {count} allow/deny events...")
     allow_count = 0
     deny_count  = 0
 
@@ -248,7 +207,6 @@ def run_firewall(host, port, count, delay):
             allow_count += 1
             label = "ALLOW"
         else:
-            # Mix: external attacker trying to reach internal OR internal hitting blocked port
             if random.random() > 0.5:
                 src = random.choice(ATTACKER_IPS)
                 dst = random.choice(INTERNAL_IPS)
@@ -268,10 +226,8 @@ def run_firewall(host, port, count, delay):
 
     print(f"\n   ✅ Sent {allow_count} ALLOW + {deny_count} DENY events.\n")
 
-
 def run_mixed_stream(host, port, count, delay):
-    """Interleaved realistic traffic stream."""
-    print(f"\n🌊 [MIXED STREAM] Running combined scenario ({count} total events)...")
+    print(f"\n[MIXED STREAM] Running combined scenario ({count} total events)...")
     attacker = random.choice(ATTACKER_IPS)
     victim   = random.choice(INTERNAL_IPS)
     scan_ports = [22, 23, 80, 443, 3389, 8080, 445, 21]
@@ -311,10 +267,6 @@ def run_mixed_stream(host, port, count, delay):
 
     print(f"\n   ✅ Mixed stream complete.\n")
 
-
-# ─────────────────────────────────────────────
-#  MAIN
-# ─────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="FortiGate Demo Syslog Injector")
     parser.add_argument("--host",     default=DEFAULT_HOST,  help="Syslog listener IP (default: 127.0.0.1)")
@@ -343,8 +295,7 @@ def main():
     if args.scenario in ("mixed", "all"):
         run_mixed_stream(args.host, args.port, args.count, args.delay)
 
-    print("🎯 All done! Check your SOC parser for the incoming events.")
-
+    print("All done! Check your SOC parser for the incoming events.")
 
 if __name__ == "__main__":
     main()
