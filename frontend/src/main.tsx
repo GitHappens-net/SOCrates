@@ -6,7 +6,7 @@ import DashboardPage from "@/pages/DashboardPage";
 import DevicesPage from "@/pages/DevicesPage";
 import LogsPage from "@/pages/LogsPage";
 import HistoryPage from "@/pages/HistoryPage";
-import { DataProvider } from "@/context/DataContext";
+import { DataProvider } from "@/components/context/DataContext";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

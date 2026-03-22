@@ -46,7 +46,7 @@ export default function DashboardPage() {
 
   const SEVERITY_COLORS: Record<string, string> = {
     info: "#4f80ed",     // blue
-    low: "#43b36cC",      // green
+    low: "#43b36c",      // green
     medium: "#eab308",   // yellow
     high: "#df9036",     // orange
     critical: "#e14f4f", // red
@@ -83,7 +83,7 @@ export default function DashboardPage() {
           label="Open Alerts"
           value={String(openAlerts)}
           accent="red"
-          onClick={() => navigate("/history")}
+          onClick={() => navigate("/history?status=open")}
         />
         <DashboardMetricCard
           icon={MonitorDot}
@@ -97,21 +97,21 @@ export default function DashboardPage() {
           label="High / Critical"
           value={String(highAlerts)}
           accent="orange"
-          onClick={() => navigate("/logs")}
+          onClick={() => navigate("/logs?severity=high-critical")}
         />
         <DashboardMetricCard
           icon={CheckCircle}
           label="Resolved Alerts"
           value={String(resolvedAlerts)}
           accent="green"
-          onClick={() => navigate("/history")}
+          onClick={() => navigate("/history?status=resolved")}
         />
         <DashboardMetricCard
           icon={Server}
           label="Tracked Vendors"
           value={String(trackedVendors)}
           accent="blue"
-          onClick={() => navigate("/devices")}
+          onClick={() => navigate("/logs?focus=vendor")}
         />
       </div>
 

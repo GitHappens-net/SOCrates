@@ -9,6 +9,7 @@ import {
   CartesianGrid,
   Tooltip,
 } from "recharts";
+import { useNavigate } from "react-router-dom";
 
 interface DevicePoint {
   name: string;
@@ -21,6 +22,8 @@ interface TopDevicesChartProps {
 }
 
 export default function TopDevicesChart({ data }: TopDevicesChartProps) {
+  const navigate = useNavigate();
+
   return (
     <div className="rounded-xl border-2 border-gray-700 bg-gray-100 p-5 xl:col-span-2">
       <h3 className="mb-4 text-md font-unica font-semibold uppercase tracking-wider text-gray-700">
@@ -41,10 +44,18 @@ export default function TopDevicesChart({ data }: TopDevicesChartProps) {
                 height={50}
               />
               <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+              <Tooltip cursor={{ fill: 'transparent' }} />
+              <Bar 
+                dataKey="value" 
+                radius={[4, 4, 0, 0]}
+                onClick={(entry) => navigate(`/devices?ip=${entry.name}`)}
+              >
                 {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.fill || "#2563eb"} />
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={entry.fill || "#2563eb"} 
+                    className="cursor-pointer hover:opacity-80 transition-opacity"
+                  />
                 ))}
               </Bar>
             </BarChart>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useDataMode } from "@/context/DataContext";
+import { useDataMode } from "@/components/context/DataContext";
 import { fetchDevices, fetchLogs, fetchAlerts, fetchStats, fetchDeviceLogs } from "@/api/client";
 import type { ApiAlert, ApiDevice, ApiLog, ApiStats } from "@/api/types";
 import { MOCK_DEVICES, MOCK_ALERTS, MOCK_STATS, generateMockLogs } from "@/api/data/mockApi";
@@ -31,7 +31,7 @@ export function useDevices(pollMs = 10000) {
 }
 
 /* Logs (with polling) */
-export function useLogs(limit = 100, pollMs = 5000) {
+export function useLogs(limit = 100, pollMs = 1000) {
   const { useMock } = useDataMode();
   const [logs, setLogs] = useState<ApiLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -134,7 +134,7 @@ export function useAlerts(pollMs = 10000) {
 }
 
 /* Stats */
-export function useStats(pollMs = 8000) {
+export function useStats(pollMs = 1000) {
   const { useMock } = useDataMode();
   const [stats, setStats] = useState<ApiStats | null>(null);
   const prevTotal = useRef(0);

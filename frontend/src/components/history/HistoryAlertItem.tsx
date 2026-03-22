@@ -53,7 +53,13 @@ export default function HistoryAlertItem({ alert, onStatusChange }: HistoryAlert
           <p className="truncate text-md font-semibold text-gray-900">{alert.title}</p>
           <p className="truncate text-xs text-gray-500">{alert.summary}</p>
         </div>
-        <span className="shrink-0 rounded-full bg-gray-200 px-2 py-0.5 text-[12px] font-bold text-gray-700 font-unica">
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[12px] font-bold font-unica ${
+          alert.status === "resolved" 
+            ? "bg-green-100 text-green-700" 
+            : alert.status === "open"
+            ? "bg-orange-100 text-orange-700"
+            : "bg-gray-200 text-gray-700"
+        }`}>
           {alert.status}
         </span>
         <span className="shrink-0 text-[10px] text-gray-400">{alert.created_at}</span>
@@ -125,20 +131,27 @@ export default function HistoryAlertItem({ alert, onStatusChange }: HistoryAlert
           )}
 
           <div className="flex gap-2 border-t border-gray-300 pt-3">
-            {alert.status !== "resolved" && (
+            {alert.status === "open" || alert.status === "acknowledged" ? (
+              <>
+                <button
+                  onClick={() => changeStatus("resolved")}
+                  className="rounded-full border-2 border-green-600 bg-white hover:bg-green-100 px-3 py-1.5 text-[12px] font-semibold text-green-700 transition-colors"
+                >
+                  Resolve
+                </button>
+                <button
+                  onClick={() => changeStatus("dismissed")}
+                  className="rounded-full border-2 border-gray-500 bg-white hover:bg-gray-100 px-3 py-1.5 text-[12px] font-semibold text-gray-600 transition-colors"
+                >
+                  Dismiss
+                </button>
+              </>
+            ) : (
               <button
-                onClick={() => changeStatus("resolved")}
-                className="rounded-full border-2 border-green-600 bg-white hover:bg-green-100 px-3 py-1.5 text-[12px] font-semibold text-green-700"
+                onClick={() => changeStatus("open")}
+                className="rounded-full border-2 border-purple-600 bg-white hover:bg-purple-100 px-3 py-1.5 text-[12px] font-semibold text-purple-700 transition-colors"
               >
-                Resolve
-              </button>
-            )}
-            {alert.status !== "dismissed" && (
-              <button
-                onClick={() => changeStatus("dismissed")}
-                className="rounded-full border-2 border-red-600 bg-white hover:bg-red-100 px-3 py-1.5 text-[12px] font-semibold text-red-700"
-              >
-                Dismiss
+                Reopen
               </button>
             )}
           </div>

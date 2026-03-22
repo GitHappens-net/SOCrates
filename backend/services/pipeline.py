@@ -21,6 +21,13 @@ _DB_FLUSH_INTERVAL = 120.0  # 2 minutes
 
 _work_queue: queue.Queue = queue.Queue()
 
+_db_buffer_lock = threading.Lock()
+_unwritten_logs: list[dict] = []
+
+def get_unwritten_logs() -> list[dict]:
+    with _db_buffer_lock:
+        return list(_unwritten_logs)
+
 # Queue to offload syslog parsing from the UDP thread
 _raw_logs_queue: queue.Queue = queue.Queue()
 _ingest_num_threads = 4  # Can adjust based on deployment size
@@ -28,6 +35,10 @@ _ingest_num_threads = 4  # Can adjust based on deployment size
 # ---------------------------------------------------------------------------
 # Agent batch helpers
 # ---------------------------------------------------------------------------
+def get_current_agent_queue() -> list[dict]:
+    with _agent_lock:
+        return list(_agent_queue)
+
 def _on_batch_ready(batch: list[dict]) -> None:
     print(f"[pipeline] batch of {len(batch)} logs ready for agent analysis")
     analyze_batch_async(batch)
@@ -85,6 +96,10 @@ def _db_writer() -> None:
                     (e["source_ip"], _extract_hostname(e["fields"]), e["vendor"], e["device_type"])
                     for e in buffer
                 ])
+                
+                global _unwritten_logs
+                with _db_buffer_lock:
+                    del _unwritten_logs[:len(buffer)]
             except Exception as exc:
                 print(f"[pipeline] DB write error: {exc}")
             buffer.clear()
@@ -98,6 +113,8 @@ def _db_writer() -> None:
                 (e["source_ip"], _extract_hostname(e["fields"]), e["vendor"], e["device_type"])
                 for e in buffer
             ])
+            with _db_buffer_lock:
+                del _unwritten_logs[:len(buffer)]
         except Exception as exc:
             print(f"[pipeline] DB final flush error: {exc}")
     conn.close()
@@ -140,6 +157,9 @@ def process_log(source_ip: str, raw_syslog: str) -> dict:
 
     # Hand off to DB writer — non-blocking, returns in microseconds
     _work_queue.put(log_entry)
+    
+    with _db_buffer_lock:
+        _unwritten_logs.append(log_entry)
 
     # Feed the agent queue
     with _agent_lock:

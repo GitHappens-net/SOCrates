@@ -126,6 +126,50 @@ def _enrich_common_message_fields(fields: dict, source_ip: str) -> dict:
     fields.setdefault("srcip", source_ip)
     return fields
 
+def _infer_severity_from_fields(fields: dict, default_severity: int) -> int:
+    """Infer syslog severity numeric value from the parsed fields."""
+    sev_str = fields.get("level", fields.get("severity", ""))
+    
+    # Check for FortiGate 'apprisk' field
+    apprisk = fields.get("apprisk", "").lower()
+    if apprisk:
+        if apprisk == "critical": return 2
+        if apprisk == "high" or apprisk == "elevated": return 3
+        if apprisk == "medium": return 4
+        if apprisk == "low": return 5
+
+    # Check for threatweight / crscore (FortiGate)
+    threat_weight = fields.get("threatweight", fields.get("crscore", "0"))
+    try:
+        tw = int(threat_weight)
+        if tw >= 50: return 2
+        if tw >= 30: return 3
+        if tw >= 20: return 4
+    except ValueError:
+        pass
+
+    if isinstance(sev_str, str) and sev_str:
+        low = sev_str.lower()
+        if low in ("emergency", "emerg"): return 0
+        if low in ("alert",): return 1
+        if low in ("critical", "crit"): return 2
+        if low in ("error", "err"): return 3
+        if low in ("warning", "warn"): return 4
+        if low in ("notice",): return 5
+        if low in ("informational", "info"): return 6
+        if low in ("debug",): return 7
+    
+    # Fallback to checking the action / fw rules for PaloAlto and others
+    action = fields.get("action", "").lower()
+    if action in ("deny", "drop", "blocked", "server-rst", "timeout"):
+        # We can map specific apps to higher severities if blocked
+        app = fields.get("app", "").lower()
+        if app in ("irc", "quic", "ssh"): return 2 # Critical
+        if app in ("web-browsing", "smb", "nmap", "ftp"): return 3 # High
+        return 4 # Medium
+        
+    return default_severity
+
 # Generate parsing template via OpenAI
 def _ai_generate_template(raw_syslog: str, fingerprint: str) -> dict | None:
     if not _OPENAI_CLIENT:
@@ -201,6 +245,7 @@ def normalize_log(source_ip: str, raw_syslog: str) -> dict:
         if fields:
             fields = enrich_vendor_fields(template["vendor"], fields)
             fields = _enrich_common_message_fields(fields, source_ip)
+            severity = _infer_severity_from_fields(fields, severity)
             return {
                 "fields": fields,
                 "facility": facility,
@@ -262,6 +307,7 @@ def normalize_log(source_ip: str, raw_syslog: str) -> dict:
 
         fields = enrich_vendor_fields(ai.get("vendor", "unknown"), fields)
         fields = _enrich_common_message_fields(fields, source_ip)
+        severity = _infer_severity_from_fields(fields, severity)
 
         return {
             "fields": fields,
