@@ -18,7 +18,11 @@ _lock = threading.Lock()
 
 _MAX_HISTORY = 40  # max messages kept per session
 
-_SYSTEM_PROMPT = """\
+_IP_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
+_SOAR_CONFIRM_PREFIX = "SOAR_CONFIRM::"
+_SOAR_RESULT_PREFIX = "SOAR_RESULT::"
+
+_SYSTEM_PROMPT = """
 You are SOCrates, an AI-powered Security Operations Centre (SOC) assistant.
 You help security analysts monitor their infrastructure, investigate alerts,
 correlate events, and recommend mitigations.
@@ -26,6 +30,7 @@ correlate events, and recommend mitigations.
 Guidelines:
 - Be concise and actionable.
 - ALWAYS use the provided tools (like close_port, open_port, block_ip) to execute actions directly on the devices. NEVER simply give the user commands to run manually unless there aren't any tools that correspond to them.
+- NEVER guess or hallucinate parameter values for tool calls. If the user does not explicitly provide a required value (like port number, protocol, target IP, PID, or file path), DO NOT call the tool. Instead, reply with a question asking for the missing details.
 - Reference specific alert IDs, device IPs, and log data when available.
 - If you don't have enough information to answer, use the provided tools to query the database.
 - Never claim you do not have live feed/SIEM access unless tool calls explicitly return empty or errors.
@@ -37,28 +42,24 @@ Guidelines:
 - Use `query_alerts` to check recent alerts.
 - Use `get_log_statistics` if the user asks for ingest stats or top talkers.
 - If the user asks to close a port but doesn't specify TCP or UDP, you MUST ask them which protocol they want to block before executing the action.
+- NEVER return an empty or blank response. Always say something to the user, even if you don't know the answer.
 
 ### Snapshot Time (UTC)
 {now_utc}
 """
-
-def _build_system_prompt() -> str:
-    return _SYSTEM_PROMPT.format(
-        now_utc=datetime.utcnow().isoformat(timespec="seconds"),
-    )
 
 _TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "close_port",
-            "description": "Issue a command to close or block a port on a specific firewall or network device. ALWAYS ask the user if they want to block TCP or UDP if they don't specify.",
+            "description": "Issue a command to close or block a port on a specific firewall or network device. ALWAYS ask the user if they want to block TCP or UDP if they don't specify. NEVER execute this tool by guessing a port number or protocol. If the user doesn't provide them, ask them first.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "port": {
-                        "type": "integer",
-                        "description": "The port number to close (e.g. 22)."
+                        "type": "string",
+                        "description": "The port number to close (e.g. '22')."
                     },
                     "protocol": {
                         "type": "string",
@@ -83,8 +84,8 @@ _TOOLS = [
                 "type": "object",
                 "properties": {
                     "port": {
-                        "type": "integer",
-                        "description": "The port number to unblock (e.g. 22)."
+                        "type": "string",
+                        "description": "The port number to unblock (e.g. '22')."
                     },
                     "protocol": {
                         "type": "string",
@@ -172,7 +173,7 @@ _TOOLS = [
                 "type": "object",
                 "properties": {
                     "pid": {
-                        "type": "integer",
+                        "type": "string",
                         "description": "The PID of the process to kill."
                     },
                     "device_ip": {
@@ -214,8 +215,8 @@ _TOOLS = [
                 "type": "object",
                 "properties": {
                     "minutes": {
-                        "type": "integer",
-                        "description": "The timeframe in minutes to look back for recent threats (default 60)."
+                        "type": "string",
+                        "description": "The timeframe in minutes to look back for recent threats (default '60')."
                     }
                 }
             }
@@ -245,6 +246,11 @@ _TOOLS = [
     }
 ]
 
+def _build_system_prompt() -> str:
+    return _SYSTEM_PROMPT.format(
+        now_utc=datetime.utcnow().isoformat(timespec="seconds"),
+    )
+
 def _build_log_statistics_reply() -> str:
     stats = get_log_stats()
     return json.dumps({
@@ -271,11 +277,6 @@ def _build_alerts_reply(minutes: int) -> str:
         for a in recent
     ])
 
-_IP_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
-_SOAR_CONFIRM_PREFIX = "SOAR_CONFIRM::"
-_SOAR_RESULT_PREFIX = "SOAR_RESULT::"
-
-# Infer likely device IP from recent conversation context.
 def _infer_device_from_history(history: list[dict]) -> str | None:
     devices = get_devices_list()
     valid_ips = {
@@ -323,19 +324,15 @@ def _is_cancel(text: str) -> bool:
     return bool(re.match(r"^(cancel|no|n|stop|abort|never\s*mind)\b", t))
 
 def _soar_confirm_message(intent: dict, device_ip: str) -> str:
+    exclude_keys = {"type", "device_ip", "raw_tool_call", "msg_obj_dict", "awaiting_confirmation"}
+    params = {k: v for k, v in intent.items() if k not in exclude_keys and v is not None}
+    
     payload = {
         "title": "SOAR Action Confirmation",
         "mode": "live",
         "device_ip": device_ip,
         "action_type": intent.get("type"),
-        "parameters": {
-            "port": intent.get("port"),
-            "protocol": intent.get("protocol"),
-            "target_ip": intent.get("target_ip"),
-            "mac_address": intent.get("mac_address"),
-            "pid": intent.get("pid"),
-            "file_path": intent.get("file_path"),
-        },
+        "parameters": params,
         "confirm_hint": "Reply 'confirm' to proceed or 'cancel' to abort.",
     }
     return _SOAR_CONFIRM_PREFIX + json.dumps(payload)
@@ -351,146 +348,40 @@ def _soar_result_message(*, ok: bool, action_id: int, status: str, summary: str,
     return _SOAR_RESULT_PREFIX + json.dumps(payload)
 
 def _execute_soar_intent(intent: dict, device_ip: str) -> str:
-    if intent["type"] == "close_port":
-        res = execute_soar_action(
-            device_ip=device_ip,
-            action_type="close_port",
-            parameters={
-                "port": intent["port"],
-                "protocol": intent["protocol"],
-            },
-            requested_by="chat",
-            source="chat",
-        )
-        details = None
-        if res.error and "Missing FortiGate API token" in res.error:
-            details = "Set FORTIGATE_API_TOKEN or FORTIGATE_TOKENS_JSON in backend/.env."
-        return _soar_result_message(
-            ok=res.ok,
-            action_id=res.action_id,
-            status=res.status,
-            summary=(
-                f"close_port on {device_ip}"
-                if res.ok
-                else f"Failed close_port on {device_ip}"
-            ),
-            details=details or res.summary,
-        )
+    action_type = intent.get("type", "")
+    if not action_type:
+        return _soar_result_message(ok=False, action_id=0, status="failed", summary="Unsupported SOAR intent")
 
-    if intent["type"] == "open_port":
-        res = execute_soar_action(
-            device_ip=device_ip,
-            action_type="open_port",
-            parameters={
-                "port": intent["port"],
-                "protocol": intent["protocol"],
-            },
-            requested_by="chat",
-            source="chat",
-        )
-        details = None
-        if res.error and "Missing API token" in res.error:
+    # Extract all parameters dynamically except our metadata
+    exclude_keys = {"type", "device_ip", "raw_tool_call", "msg_obj_dict", "awaiting_confirmation"}
+    params = {k: v for k, v in intent.items() if k not in exclude_keys}
+
+    res = execute_soar_action(
+        device_ip=device_ip,
+        action_type=action_type,
+        parameters=params,
+        requested_by="chat",
+        source="chat",
+    )
+
+    details = res.summary
+    if res.error:
+        if "Missing FortiGate API token" in res.error:
+            details = "Set FORTIGATE_API_TOKEN or FORTIGATE_TOKENS_JSON in backend/.env."
+        elif "Missing API token" in res.error:
             details = "Set appropriate API tokens in backend/.env."
-        return _soar_result_message(
-            ok=res.ok,
-            action_id=res.action_id,
-            status=res.status,
-            summary=(
-                f"open_port on {device_ip}"
-                if res.ok
-                else f"Failed open_port on {device_ip}"
-            ),
-            details=details or res.summary,
-        )
 
-    if intent["type"] == "block_ip":
-        res = execute_soar_action(
-            device_ip=device_ip,
-            action_type="block_ip",
-            parameters={"target_ip": intent["target_ip"]},
-            requested_by="chat",
-            source="chat",
-        )
-        details = None
-        if res.error and "Missing FortiGate API token" in res.error:
-            details = "Set FORTIGATE_API_TOKEN or FORTIGATE_TOKENS_JSON in backend/.env."
-        return _soar_result_message(
-            ok=res.ok,
-            action_id=res.action_id,
-            status=res.status,
-            summary=(
-                f"block_ip {intent['target_ip']} on {device_ip}"
-                if res.ok
-                else f"Failed block_ip {intent['target_ip']} on {device_ip}"
-            ),
-            details=details or res.summary,
-        )
+    # Format a generic summary
+    param_str = " ".join(str(v) for v in params.values())
+    summary_msg = f"{action_type} {param_str} on {device_ip}" if res.ok else f"Failed {action_type} {param_str} on {device_ip}"
 
-    if intent["type"] == "unblock_ip":
-        res = execute_soar_action(
-            device_ip=device_ip,
-            action_type="unblock_ip",
-            parameters={"target_ip": intent["target_ip"]},
-            requested_by="chat",
-            source="chat",
-        )
-        return _soar_result_message(
-            ok=res.ok,
-            action_id=res.action_id,
-            status=res.status,
-            summary=f"unblock_ip {intent['target_ip']} on {device_ip}" if res.ok else f"Failed unblock_ip {intent['target_ip']} on {device_ip}",
-            details=res.summary,
-        )
-
-    if intent["type"] == "quarantine_mac_address":
-        res = execute_soar_action(
-            device_ip=device_ip,
-            action_type="quarantine_mac_address",
-            parameters={"mac_address": intent["mac_address"]},
-            requested_by="chat",
-            source="chat",
-        )
-        return _soar_result_message(
-            ok=res.ok,
-            action_id=res.action_id,
-            status=res.status,
-            summary=f"quarantine_mac {intent['mac_address']} on {device_ip}" if res.ok else f"Failed quarantine_mac {intent['mac_address']} on {device_ip}",
-            details=res.summary,
-        )
-
-    if intent["type"] == "kill_process":
-        res = execute_soar_action(
-            device_ip=device_ip,
-            action_type="kill_process",
-            parameters={"pid": intent["pid"]},
-            requested_by="chat",
-            source="chat",
-        )
-        return _soar_result_message(
-            ok=res.ok,
-            action_id=res.action_id,
-            status=res.status,
-            summary=f"kill_process {intent['pid']} on {device_ip}" if res.ok else f"Failed kill_process {intent['pid']} on {device_ip}",
-            details=res.summary,
-        )
-
-    if intent["type"] == "quarantine_file":
-        res = execute_soar_action(
-            device_ip=device_ip,
-            action_type="quarantine_file",
-            parameters={"file_path": intent["file_path"]},
-            requested_by="chat",
-            source="chat",
-        )
-        return _soar_result_message(
-            ok=res.ok,
-            action_id=res.action_id,
-            status=res.status,
-            summary=f"quarantine_file {intent['file_path']} on {device_ip}" if res.ok else f"Failed quarantine_file {intent['file_path']} on {device_ip}",
-            details=res.summary,
-        )
-
-    return _soar_result_message(ok=False, action_id=0, status="failed", summary="Unsupported SOAR intent")
+    return _soar_result_message(
+        ok=res.ok,
+        action_id=res.action_id,
+        status=res.status,
+        summary=summary_msg.strip(),
+        details=details,
+    )
 
 def _handle_soar_intent(intent: dict, session_id: str, message: str, history: list[dict]) -> str:
     device_ip = intent.get("device_ip") or _infer_device_from_history(history) or _default_device_ip()
@@ -588,8 +479,8 @@ def chat(message: str, session_id: str = "default") -> str:
                     temperature=0.3,
                     max_completion_tokens=16000,
                 )
-                ai_text = resp2.choices[0].message.content.strip() if resp2.choices[0].message.content else "Action completed."
-                final_reply = exec_reply + "\n\n" + ai_text
+                ai_text = resp2.choices[0].message.content.strip() if resp2.choices[0].message.content else ""
+                final_reply = exec_reply + ("\n\n" + ai_text if ai_text else "")
             except Exception as exc:
                 final_reply = exec_reply + f"\n\n(AI Summary Failed: {exc})"
                 
@@ -617,53 +508,66 @@ def chat(message: str, session_id: str = "default") -> str:
             temperature=0.3,
             max_completion_tokens=16000,
         )
-        msg_obj = resp.choices[0].message
+        current_msg = resp.choices[0].message
 
-        if msg_obj.tool_calls:
-            tool_call = msg_obj.tool_calls[0]
-            func_name = tool_call.function.name
-            args = json.loads(tool_call.function.arguments)
+        max_turns = 3
+        reply = ""
+        
+        while max_turns > 0:
+            if current_msg.tool_calls:
+                tool_call = current_msg.tool_calls[0]
+                func_name = tool_call.function.name
+                args = json.loads(tool_call.function.arguments)
 
-            if func_name in ("close_port", "block_ip", "open_port", "unblock_ip", "quarantine_mac_address", "kill_process", "quarantine_file"):
-                intent = {
-                    "type": func_name,
-                    "raw_tool_call": tool_call.model_dump(),
-                    "msg_obj_dict": msg_obj.model_dump(exclude_unset=True)
-                }
-                intent.update(args)
-                return _handle_soar_intent(intent, session_id, message, history_snapshot)
+                if func_name in ("close_port", "block_ip", "open_port", "unblock_ip", "quarantine_mac_address", "kill_process", "quarantine_file"):
+                    intent = {
+                        "type": func_name,
+                        "raw_tool_call": tool_call.model_dump(),
+                        "msg_obj_dict": current_msg.model_dump(exclude_unset=True)
+                    }
+                    intent.update(args)
+                    return _handle_soar_intent(intent, session_id, message, history_snapshot)
 
-            # Informational tools: run and feed back to agent
-            tool_result = ""
-            if func_name == "query_alerts":
-                tool_result = _build_alerts_reply(args.get("minutes", 60))
-            elif func_name == "search_devices":
-                tool_result = _build_search_devices_reply()
-            elif func_name == "get_log_statistics":
-                tool_result = _build_log_statistics_reply()
+                # Informational tools: run and feed back to agent
+                tool_result = ""
+                if func_name == "query_alerts":
+                    minutes_arg = args.get("minutes", 60)
+                    try:
+                        minutes = int(minutes_arg)
+                    except (ValueError, TypeError):
+                        minutes = 60
+                    tool_result = _build_alerts_reply(minutes)
+                elif func_name == "search_devices":
+                    tool_result = _build_search_devices_reply()
+                elif func_name == "get_log_statistics":
+                    tool_result = _build_log_statistics_reply()
+                else:
+                    tool_result = f"Unsupported tool call: {func_name}"
+
+                # Prepare messages for next pass
+                messages.append(current_msg)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": func_name,
+                    "content": tool_result
+                })
+
+                resp2 = _CLIENT.chat.completions.create(
+                    model=_MODEL,
+                    messages=messages,
+                    tools=_TOOLS,
+                    temperature=0.3,
+                    max_completion_tokens=16000,
+                )
+                current_msg = resp2.choices[0].message
+                max_turns -= 1
             else:
-                tool_result = f"Unsupported tool call: {func_name}"
-
-            # Prepare messages for 2nd pass
-            messages.append(msg_obj)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "name": func_name,
-                "content": tool_result
-            })
-
-            resp2 = _CLIENT.chat.completions.create(
-                model=_MODEL,
-                messages=messages,
-                tools=_TOOLS,
-                temperature=0.3,
-                max_completion_tokens=16000,
-            )
-            reply = resp2.choices[0].message.content.strip() if resp2.choices[0].message.content else "Done."
-
-        else:
-            reply = msg_obj.content.strip() if msg_obj.content else "Done."
+                reply = current_msg.content.strip() if current_msg.content else "I couldn't generate a response. Please ask again or be more specific."
+                break
+                
+        if not reply:
+             reply = current_msg.content.strip() if current_msg.content else "Agent stopped after executing operations. No textual response provided."
 
     except Exception as exc:
         reply = f"Error communicating with the AI model: {exc}"

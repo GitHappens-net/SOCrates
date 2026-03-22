@@ -6,6 +6,7 @@ import DashboardPage from "@/pages/DashboardPage";
 import DevicesPage from "@/pages/DevicesPage";
 import LogsPage from "@/pages/LogsPage";
 import HistoryPage from "@/pages/HistoryPage";
+import ActionsPage from "@/pages/ActionsPage";
 import { DataProvider } from "@/components/context/DataContext";
 import "./index.css";
 
@@ -19,6 +20,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
             <Route path="/devices" element={<DevicesPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/history" element={<HistoryPage />} />
+            <Route path="/actions" element={<ActionsPage />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
         </Routes>

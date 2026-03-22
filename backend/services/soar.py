@@ -36,6 +36,23 @@ _SEVERITY_RANK = {
     "critical": 4,
 }
 
+def _is_blockable_ip(ip: str) -> bool:
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+        if ip_obj.is_loopback or ip_obj.is_unspecified or ip_obj.is_multicast or ip_obj.is_link_local or ip_obj.is_reserved:
+            return False
+        if str(ip_obj) == "255.255.255.255":
+            return False
+            
+        # Never block our own known devices (avoid self-lockout)
+        device_ips = {d.get("ip", "") for d in get_devices_list()}
+        if ip in device_ips:
+            return False
+            
+        return True
+    except ValueError:
+        return False
+
 def _normalize_device_host(device_ip: str) -> str:
     device_ip = device_ip.strip()
     if not device_ip:
@@ -137,6 +154,8 @@ def execute_soar_action(*, device_ip: str, action_type: str, parameters: dict, r
 
         if action_type == "block_ip":
             target_ip = str(parameters.get("target_ip", "")).strip()
+            if not _is_blockable_ip(target_ip):
+                raise SoarError(f"IP {target_ip} is protected or invalid and cannot be blocked.")
             result = vendor_module.block_ip(device_ip, token, target_ip)
         elif action_type == "close_port":
             port = int(parameters.get("port", 0))
@@ -178,10 +197,7 @@ def execute_soar_action(*, device_ip: str, action_type: str, parameters: dict, r
         update_soar_action_result(action_id, status="failed", error=err)
         return ActionResult(False, action_id, "failed", err, error=err)
 
-def execute_alert_mitigations(alert_id: int) -> list[dict]:
-    # Fetch the alert to get mitigations and affected devices
-    
-    
+def _extract_and_execute_blocks(alert_id: int, requested_by: str, source_prefix: str) -> list[dict]:
     alert = get_alert(alert_id)
     if not alert:
         return []
@@ -190,84 +206,21 @@ def execute_alert_mitigations(alert_id: int) -> list[dict]:
     if not mitigations:
         return []
     
-    # We will aggregate all mitigating descriptions/commands
-    mitigations_text = " ".join([m.get("description", "") + " " + m.get("command", "") for m in mitigations])
-    
-    ips_to_block = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', mitigations_text)
-    
-    # Exclude internal/private ranges and the device itself (you can expand this as needed)
-    EXCLUDE = {"127.0.0.1", "192.168.1.101", "0.0.0.0"}
-    targets = list(set([ip for ip in ips_to_block if ip not in EXCLUDE]))
-    
-    if not targets:
-        return []
-
-    all_devices = get_devices_list()
-    supported_firewalls = [
-        d for d in all_devices 
-        if str(d.get("vendor", "")).lower() in ("fortinet", "palo alto")
-    ]
-    
-    if not supported_firewalls:
-        return []
-
-    out: list[dict] = []
-    
+    # Check if there's actually a block/deny action recommended
     has_block = any("block" in str(m.get("command", "")).lower() or "deny" in str(m.get("description", "")).lower() for m in mitigations)
-    
-    if has_block:
-        for fw in supported_firewalls:
-            for target_ip in targets:
-                res = execute_soar_action(
-                    device_ip=fw["ip"],
-                    action_type="block_ip",
-                    parameters={"target_ip": target_ip},
-                    requested_by="api",
-                    source=f"manual-resolve:alert#{alert_id}",
-                )
-                out.append(
-                    {
-                        "alert_id": alert_id,
-                        "firewall_ip": fw["ip"],
-                        "target_ip": target_ip,
-                        "action_id": res.action_id,
-                        "ok": res.ok,
-                        "status": res.status,
-                        "summary": res.summary,
-                        "error": res.error,
-                    }
-                )
-    return out
-
-def auto_respond_to_alert(*, alert_id: int, severity: str, affected_devices: list[str] | None) -> list[dict]:
-    if not SOAR_AUTO_RESPONSE_ENABLED:
-        return []
-
-    sev_rank = _SEVERITY_RANK.get(str(severity).lower(), 0)
-    min_rank = _SEVERITY_RANK.get(SOAR_AUTO_RESPONSE_MIN_SEVERITY, 3)
-    if sev_rank < min_rank:
-        return []
-
-    alert = get_alert(alert_id)
-    if not alert:
+    if not has_block:
         return []
         
-    mitigations = alert.get("mitigations", [])
-    if not mitigations:
-        return []
-    
     mitigations_text = " ".join([m.get("description", "") + " " + m.get("command", "") for m in mitigations])
     ips_to_block = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', mitigations_text)
     
-    EXCLUDE = {"127.0.0.1", "192.168.1.101", "0.0.0.0"}
-    targets = list(set([ip for ip in ips_to_block if ip not in EXCLUDE]))
-    
+    # Use _is_blockable_ip instead of hardcoded excludes
+    targets = list(set([ip for ip in ips_to_block if _is_blockable_ip(ip)]))
     if not targets:
         return []
 
-    all_devices = get_devices_list()
     supported_firewalls = [
-        d for d in all_devices 
+        d for d in get_devices_list() 
         if str(d.get("vendor", "")).lower() in ("fortinet", "palo alto")
     ]
     
@@ -281,8 +234,8 @@ def auto_respond_to_alert(*, alert_id: int, severity: str, affected_devices: lis
                 device_ip=fw["ip"],
                 action_type="block_ip",
                 parameters={"target_ip": target_ip},
-                requested_by="analyzer",
-                source=f"auto-response:alert#{alert_id}",
+                requested_by=requested_by,
+                source=f"{source_prefix}:alert#{alert_id}",
             )
             out.append(
                 {
@@ -297,3 +250,17 @@ def auto_respond_to_alert(*, alert_id: int, severity: str, affected_devices: lis
                 }
             )
     return out
+
+def execute_alert_mitigations(alert_id: int) -> list[dict]:
+    return _extract_and_execute_blocks(alert_id, "api", "manual-resolve")
+
+def auto_respond_to_alert(*, alert_id: int, severity: str) -> list[dict]:
+    if not SOAR_AUTO_RESPONSE_ENABLED:
+        return []
+
+    sev_rank = _SEVERITY_RANK.get(str(severity).lower(), 0)
+    min_rank = _SEVERITY_RANK.get(SOAR_AUTO_RESPONSE_MIN_SEVERITY, 3)
+    if sev_rank < min_rank:
+        return []
+
+    return _extract_and_execute_blocks(alert_id, "analyzer", "auto-response")

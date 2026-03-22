@@ -40,6 +40,21 @@ export interface ApiLog {
   parsed_fields: Record<string, string>;
 }
 
+export interface ApiAction {
+  id: number;
+  created_at: string;
+  updated_at: string | null;
+  status: string;
+  device_ip: string;
+  vendor: string;
+  action_type: string;
+  parameters: Record<string, any>;
+  result: Record<string, any> | null;
+  error: string | null;
+  requested_by: string;
+  source: string;
+}
+
 export interface ApiStats {
   total_logs: number;
   by_vendor: Record<string, number>;

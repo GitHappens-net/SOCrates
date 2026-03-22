@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-
+import zlib
 from ..analysis.chat import chat, clear_session
 from ..database.db import (
     clear_alerts, get_alert, get_alerts, get_devices_list,
@@ -7,8 +7,6 @@ from ..database.db import (
     get_soar_action, get_soar_actions, update_alert_status)
 from ..services.soar import execute_soar_action, execute_alert_mitigations
 from ..services.pipeline import get_unwritten_logs
-
-import zlib
 
 api_bp = Blueprint("api", __name__)
 

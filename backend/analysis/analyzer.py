@@ -1,8 +1,8 @@
 from __future__ import annotations
-
 import threading
 from pydantic import BaseModel, Field
 import time
+import json
 
 from ..config import OPENAI_CLIENT, OPENAI_MODEL_AGENT, OPENAI_MODEL_REASONING
 from ..database.db import get_alerts, get_devices_list, find_duplicate_alert, insert_alert, get_recent_logs, get_connection
@@ -25,7 +25,6 @@ _SECURITY_FIELDS = {
 # ---------------------------------------------------------------------------
 # Helper functions 
 # ---------------------------------------------------------------------------
-# Produce a one-line summary keeping only security-relevant fields.
 def _compact_log(entry: dict) -> str:
     f = entry["fields"]
     parts = [f"{entry['vendor']}/{entry['source_ip']}"]
@@ -112,15 +111,19 @@ def _triage_batch(batch: list[dict]) -> dict | None:
         print("[analyzer] OPENAI_API_KEY not set — skipping triage")
         return None
     log_text = _numbered_logs(batch)
+    
+    prompt = _TRIAGE_PROMPT + "\n\nCRITICAL: You must respond in valid JSON matching this exact JSON schema:\n" + json.dumps(TriageResult.model_json_schema()) + "\n\nLogs:\n" + log_text
+    
     try:
-        resp = _CLIENT.beta.chat.completions.parse(
+        resp = _CLIENT.chat.completions.create(
             model=_MODEL_TRIAGE,
-            messages=[{"role": "user", "content": _TRIAGE_PROMPT + log_text}],
-            response_format=TriageResult,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
             temperature=0,
             max_tokens=1500,
         )
-        return resp.choices[0].message.parsed.model_dump()
+        content = resp.choices[0].message.content
+        return json.loads(content) if content else None
     except Exception as exc:
         print(f"[analyzer] triage API error: {exc}")
         return None
@@ -157,18 +160,19 @@ def _deep_analyze(finding: dict, related_logs: list[dict], past_alerts: list[dic
         logs=_numbered_logs(related_logs),
         past_alerts=_format_alerts_context(past_alerts),
         devices=_format_devices_context(devices),
-    )
+    ) + "\n\nCRITICAL: You must respond in valid JSON format matching this exact JSON schema:\n" + json.dumps(DeepAnalysisResult.model_json_schema())
+
     try:
-        resp = _CLIENT.beta.chat.completions.parse(
+        resp = _CLIENT.chat.completions.create(
             model=_MODEL_REASONING,
             messages=[{"role": "user", "content": prompt}],
-            response_format=DeepAnalysisResult,
+            response_format={"type": "json_object"},
         )
-        parsed = resp.choices[0].message.parsed
-        if not parsed:
+        content = resp.choices[0].message.content
+        if not content:
             print(f"[analyzer] deep-analysis: empty response (finish_reason={resp.choices[0].finish_reason})")
             return None
-        return parsed.model_dump()
+        return json.loads(content)
     except Exception as exc:
         print(f"[analyzer] deep-analysis API error: {exc}")
         return None
@@ -202,28 +206,30 @@ def _evaluate_mitigation(alert_id: int, title: str, summary: str, devices: list[
         for l in recent
     ])
     
-    prompt = _EVALUATION_PROMPT.format(title=title, summary=summary, logs=log_text)
+    prompt = _EVALUATION_PROMPT.format(title=title, summary=summary, logs=log_text) + "\n\nCRITICAL: You must respond in valid JSON format matching this exact JSON schema:\n" + json.dumps(EvaluationResult.model_json_schema())
     
     if not _CLIENT:
         return
         
     try:
-        resp = _CLIENT.beta.chat.completions.parse(
+        resp = _CLIENT.chat.completions.create(
             model=_MODEL_TRIAGE,
             messages=[{"role": "user", "content": prompt}],
-            response_format=EvaluationResult,
+            response_format={"type": "json_object"},
         )
-        parsed = resp.choices[0].message.parsed
-        if not parsed:
+        content = resp.choices[0].message.content
+        if not content:
             return
+            
+        parsed_dict = json.loads(content)
         
-        status_tag = "Action Verified: Successful" if parsed.attack_stopped else "Action Verified: Failed"
-        append_text = f"\n\n**Mitigation Evaluation**: {status_tag} - {parsed.reasoning}"
+        status_tag = "Action Verified: Successful" if parsed_dict.get("attack_stopped") else "Action Verified: Failed"
+        append_text = f"\n\n**Mitigation Evaluation**: {status_tag} - {parsed_dict.get('reasoning')}"
         
         conn = get_connection()
         conn.execute(
             "UPDATE alerts SET analysis = analysis || ?, status = ? WHERE id = ?", 
-            (append_text, status_tag if parsed.attack_stopped else "open", alert_id)
+            (append_text, status_tag if parsed_dict.get("attack_stopped") else "open", alert_id)
         )
         conn.commit()
         conn.close()
@@ -231,7 +237,6 @@ def _evaluate_mitigation(alert_id: int, title: str, summary: str, devices: list[
         
     except Exception as exc:
         print(f"[analyzer] evaluation API error: {exc}")
-
 
 def analyze_batch(batch: list[dict]) -> None:
     print(f"[analyzer] starting triage on {len(batch)} logs")
@@ -313,6 +318,4 @@ def analyze_batch(batch: list[dict]) -> None:
             ).start()
 
 def analyze_batch_async(batch: list[dict]) -> None:
-    threading.Thread(
-        target=analyze_batch, args=(batch,), name="analyzer", daemon=True
-    ).start()
+    threading.Thread(target=analyze_batch, args=(batch,), name="analyzer", daemon=True).start()

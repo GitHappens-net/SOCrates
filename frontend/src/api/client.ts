@@ -3,6 +3,7 @@ import type {
   ApiChatResponse,
   ApiDevice,
   ApiLog,
+  ApiAction,
   ApiStats,
 } from "./types";
 
@@ -79,6 +80,20 @@ export function patchAlertStatus(
 
 export function clearAlerts(): Promise<{ cleared: number }> {
   return del("/alerts");
+}
+
+/* Actions */
+export function fetchActions(params?: {
+  limit?: number;
+  offset?: number;
+  status?: string;
+}): Promise<ApiAction[]> {
+  const q = new URLSearchParams();
+  if (params?.limit) q.set("limit", String(params.limit));
+  if (params?.offset) q.set("offset", String(params.offset));
+  if (params?.status) q.set("status", params.status);
+  const qs = q.toString();
+  return get(`/soar/actions${qs ? `?${qs}` : ""}`);
 }
 
 /* Devices */

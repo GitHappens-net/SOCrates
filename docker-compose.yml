@@ -6,7 +6,7 @@ services:
     ports:
       - "5173:5174"
     environment:
-      - CHOKIDAR_USEPOLLING=true # Useful for Vite dev server hot-reload in Docker
+      - CHOKIDAR_USEPOLLING=true
       - VITE_BACKEND_URL=http://backend:8000
     volumes:
       - ./frontend:/app
@@ -18,7 +18,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
-      - "514:514/udp" # Syslog UDP
+      - "514:514/udp"
     volumes:
       - ./backend:/app/backend
       - ./data:/app/data:ro
@@ -26,13 +26,12 @@ services:
       - API_HOST=0.0.0.0
       - API_PORT=8000
       - SYSLOG_HOST=0.0.0.0
-      - SYSLOG_PORT=514
-      # Store SQLite file outside of the bind-mounted Windows volume to prevent Disk I/O errors 
+      - SYSLOG_PORT=514 
       - DATABASE_PATH=/tmp/socrates.db
 
   tools:
     build:
-      context: . # Build from root to grab backend/requirements.txt
+      context: .
       dockerfile: tools/Dockerfile
     depends_on:
       - backend

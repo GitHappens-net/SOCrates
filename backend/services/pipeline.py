@@ -21,16 +21,16 @@ _DB_FLUSH_INTERVAL = 120.0  # 2 minutes
 
 _work_queue: queue.Queue = queue.Queue()
 
+# Queue to offload syslog parsing from the UDP thread
+_raw_logs_queue: queue.Queue = queue.Queue()
+_ingest_num_threads = 4  # Can adjust based on deployment size
+
 _db_buffer_lock = threading.Lock()
 _unwritten_logs: list[dict] = []
 
 def get_unwritten_logs() -> list[dict]:
     with _db_buffer_lock:
         return list(_unwritten_logs)
-
-# Queue to offload syslog parsing from the UDP thread
-_raw_logs_queue: queue.Queue = queue.Queue()
-_ingest_num_threads = 4  # Can adjust based on deployment size
 
 # ---------------------------------------------------------------------------
 # Agent batch helpers
@@ -82,11 +82,11 @@ def _db_writer() -> None:
     while True:
         try:
             item = _work_queue.get(timeout=_DB_FLUSH_INTERVAL)
-            if item is None:          # shutdown sentinel
+            if item is None:
                 break
             buffer.append(item)
         except queue.Empty:
-            pass                      # timeout — fall through to flush check
+            pass
 
         now = time.monotonic()
         if buffer and (len(buffer) >= _DB_BATCH_SIZE or (now - last_flush) >= _DB_FLUSH_INTERVAL):
@@ -137,7 +137,6 @@ def _ingest_worker() -> None:
 # Public API
 # ---------------------------------------------------------------------------
 def queue_log(source_ip: str, raw_syslog: str) -> None:
-    """Non-blocking function to accept a raw log and queue it for processing."""
     _raw_logs_queue.put((source_ip, raw_syslog))
 
 def process_log(source_ip: str, raw_syslog: str) -> dict:

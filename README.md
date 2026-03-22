@@ -46,23 +46,36 @@ Create `.env` files for both the frontend and backend.
 
 **`backend/.env`**
 ```env
-OPENAI_API_KEY=sk-...           # ADD YOUR OPENAI API KEY
-OPENAI_MODEL_PARSER=gpt-4.1     
-OPENAI_MODEL_AGENT=gpt-4.1      # for Tier-1 triage
-OPENAI_MODEL_REASONING=gpt-5.1  # for Tier-2 deep analysis + chat
+OPENAI_API_KEY=sk-...           # ADD YOUR API KEY
+OPENAI_BASE_URL=https://api.groq.com/openai/v1
+OPENAI_MODEL_PARSER=llama-3.1-8b-instant     
+OPENAI_MODEL_AGENT=gpt-oss-120b      # for Tier-1 triage
+OPENAI_MODEL_REASONING=gpt-oss-120b  # for Tier-2 deep analysis + chat
 
 SYSLOG_HOST=0.0.0.0
 SYSLOG_PORT=514        # Windows requires Admin for port 514. Change to 5514 if unprivileged.
 
 API_HOST=0.0.0.0
-API_PORT=8000          # Internal container API port
+API_PORT=5000          # Internal container API port
 
+FORTIGATE_IP=...       # Fortigate IP for SOAR commands
 FORTIGATE_API_TOKEN=... # API token for SOAR commands on fortigate firewalls
-FORTIGATE_IP=...        # Fortigate IP for SOAR commands
+FORTIGATE_TOKENS_JSON={} # JSON mapping mapping distinct fortigate IP addresses to tokens
+FORTIGATE_VERIFY_SSL=false
+FORTIGATE_TIMEOUT_SECONDS=10
 
 WINDOWS_IP=...       # Windows IP for SOAR commands
 WINDOWS_USERNAME=... # Windows username credential for SOAR commands
 WINDOWS_PASSWORD=... # Windows password credential for SOAR commands
+
+PALOALTO_API_KEY=... # Palo Alto API Key
+PALOALTO_TOKENS_JSON={} # JSON mapping distinct Palo Alto IP addresses to keys
+PALOALTO_VERIFY_SSL=false
+PALOALTO_TIMEOUT_SECONDS=10
+
+SOAR_AUTO_RESPONSE_MIN_SEVERITY=high
+SOAR_CHAT_REQUIRE_CONFIRMATION=true
+SOAR_AUTO_RESPONSE_ENABLED=false
 ```
 
 > - Note that if necessary info for SOAR commands is not provided in the `.env` file, the AI chatbot will attempt to ask the user for it.

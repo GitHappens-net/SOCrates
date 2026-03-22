@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { LayoutDashboard, MonitorDot, Network, ChartColumn, Settings } from "lucide-react";
+import { LayoutDashboard, MonitorDot, Network, ChartColumn, Settings, Activity } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import SettingsModal from "./SettingsModal";
 
-export type ViewId = "dashboard" | "devices" | "logs" | "history";
+export type ViewId = "dashboard" | "devices" | "logs" | "history" | "actions";
 
 interface NavItem {
   id: ViewId;
@@ -19,6 +19,7 @@ interface SidebarProps {
 const NAV_ITEMS: NavItem[] = [
   { id: "dashboard", icon: LayoutDashboard, label: "Dashboard"      },
   { id: "history",   icon: ChartColumn,         label: "AI Analysis"},
+  { id: "actions",   icon: Activity,            label: "Actions"    },
   { id: "devices",   icon: Network,         label: "Devices"        },
   { id: "logs",      icon: MonitorDot,      label: "Logs"           },
 ];

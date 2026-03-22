@@ -9,6 +9,7 @@ const PATH_TO_VIEW: Record<string, ViewId> = {
   "/dashboard": "dashboard",
   "/devices": "devices",
   "/logs": "logs",
+  "/actions": "actions",
 };
 
 const VIEW_TO_PATH: Record<ViewId, string> = {
@@ -16,7 +17,7 @@ const VIEW_TO_PATH: Record<ViewId, string> = {
   dashboard: "/dashboard",
   devices: "/devices",
   logs: "/logs",
-
+  actions: "/actions",
 };
 
 export default function Layout() {

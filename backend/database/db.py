@@ -132,7 +132,6 @@ def save_template(fingerprint: str, vendor: str, device_type: str, parse_mode: s
 # Batch operations — accept a caller-owned connection so the writer thread
 # can keep one connection open and avoid per-log open/close overhead.
 def insert_logs_batch(conn: sqlite3.Connection, logs: list[dict]) -> None:
-    """Insert a batch of normalised log dicts using a single executemany call."""
     conn.executemany(
         """INSERT INTO logs
            (received_at, source_ip, vendor, device_type, facility, severity, raw_message, parsed_fields)
@@ -149,7 +148,6 @@ def insert_logs_batch(conn: sqlite3.Connection, logs: list[dict]) -> None:
     conn.commit()
 
 def upsert_devices_batch(conn: sqlite3.Connection, rows: list[tuple]) -> None:
-    """Upsert a batch of (ip, hostname, vendor, device_type) tuples."""
     conn.executemany(
         """INSERT INTO devices (ip, hostname, vendor, device_type)
            VALUES (?, ?, ?, ?)
@@ -173,15 +171,8 @@ def upsert_devices_batch(conn: sqlite3.Connection, rows: list[tuple]) -> None:
 # ---------------------------------------------------------------------------
 # Alerts
 # ---------------------------------------------------------------------------
-def insert_alert(
-    severity: str,
-    title: str,
-    summary: str,
-    analysis: str = "",
-    mitigations: list | None = None,
-    affected_devices: list | None = None,
-    related_logs: list | None = None,
-) -> int:
+def insert_alert(severity: str, title: str, summary: str, analysis: str = "", mitigations: list | None = None, 
+    affected_devices: list | None = None, related_logs: list | None = None) -> int:
     conn = get_connection()
     cur = conn.execute(
         """INSERT INTO alerts
@@ -200,7 +191,6 @@ def insert_alert(
     return alert_id
 
 def find_duplicate_alert(title: str, window_seconds: int = 3600) -> bool:
-    """Return True if an open/acknowledged alert with the same title exists within the time window."""
     conn = get_connection()
     row = conn.execute(
         """SELECT id FROM alerts
@@ -213,12 +203,7 @@ def find_duplicate_alert(title: str, window_seconds: int = 3600) -> bool:
     conn.close()
     return row is not None
 
-def get_alerts(
-    status: str | None = None,
-    severity: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> list[dict]:
+def get_alerts(status: str | None = None, severity: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
     conn = get_connection()
     sql = "SELECT * FROM alerts WHERE 1=1"
     params: list = []
@@ -235,7 +220,6 @@ def get_alerts(
     return [_row_to_alert(r) for r in rows]
 
 def get_alerts_since(minutes: int, limit: int = 100) -> list[dict]:
-    """Return alerts created within the last N minutes (newest first)."""
     conn = get_connection()
     rows = conn.execute(
         """SELECT * FROM alerts
@@ -370,14 +354,8 @@ def get_log_stats() -> dict:
 # ---------------------------------------------------------------------------
 # SOAR actions
 # ---------------------------------------------------------------------------
-def create_soar_action(
-    device_ip: str,
-    vendor: str,
-    action_type: str,
-    parameters: dict,
-    requested_by: str = "api",
-    source: str = "manual",
-) -> int:
+def create_soar_action(device_ip: str, vendor: str, action_type: str, parameters: dict, 
+    requested_by: str = "api", source: str = "manual") -> int:
     conn = get_connection()
     cur = conn.execute(
         """INSERT INTO soar_actions
@@ -390,12 +368,7 @@ def create_soar_action(
     conn.close()
     return action_id
 
-def update_soar_action_result(
-    action_id: int,
-    status: str,
-    result: dict | None = None,
-    error: str | None = None,
-) -> bool:
+def update_soar_action_result(action_id: int, status: str, result: dict | None = None, error: str | None = None) -> bool:
     conn = get_connection()
     cur = conn.execute(
         """UPDATE soar_actions

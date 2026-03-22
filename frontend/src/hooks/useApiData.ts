@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDataMode } from "@/components/context/DataContext";
-import { fetchDevices, fetchLogs, fetchAlerts, fetchStats, fetchDeviceLogs } from "@/api/client";
-import type { ApiAlert, ApiDevice, ApiLog, ApiStats } from "@/api/types";
+import { fetchDevices, fetchLogs, fetchAlerts, fetchStats, fetchDeviceLogs, fetchActions } from "@/api/client";
+import type { ApiAlert, ApiDevice, ApiLog, ApiStats, ApiAction } from "@/api/types";
 import { MOCK_DEVICES, MOCK_ALERTS, MOCK_STATS, generateMockLogs } from "@/api/data/mockApi";
 
 /* Devices */
@@ -164,4 +164,30 @@ export function useStats(pollMs = 1000) {
   }, [useMock, pollMs]);
 
   return { stats, prevTotal: prevTotal.current };
+}
+
+/* Actions */
+export function useActions(status?: string, pollMs = 5000) {
+  const { useMock } = useDataMode();
+  const [actions, setActions] = useState<ApiAction[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (useMock) {
+      setActions([]); // Not mocked yet
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      fetchActions({ status })
+        .then((d) => { if (!cancelled) { setActions(d); setLoading(false); } })
+        .catch(() => { if (!cancelled) setLoading(false); });
+    };
+    load();
+    const iv = setInterval(load, pollMs);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [useMock, status, pollMs]);
+
+  return { actions, loading };
 }
