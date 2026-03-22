@@ -105,14 +105,22 @@ function ChatBubble({ msg, onQuickReply }: { msg: ChatMsg; onQuickReply: (text: 
         <div className="max-w-[92%] rounded-3xl rounded-bl-md border-2 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <p className="mb-2 flex items-center gap-2 font-semibold">
             <ShieldAlert className="h-4 w-4" />
-            {confirm.title ?? "SOAR Action Confirmation"}
+            {confirm.title ?? "Action Confirmation"}
           </p>
           <div className="space-y-1 text-xs">
             <p><span className="font-semibold">Mode:</span> {confirm.mode ?? "live"}</p>
             <p><span className="font-semibold">Device:</span> {confirm.device_ip ?? "unknown"}</p>
             <p><span className="font-semibold">Action:</span> {confirm.action_type ?? "unknown"}</p>
-            {Object.keys(params).length > 0 && (
-              <p><span className="font-semibold">Parameters:</span> {JSON.stringify(params)}</p>
+            {Object.entries(params).length > 0 && (
+              <p className="truncate">
+                <span className="font-semibold">Parameters:</span>{" "}
+                {Object.entries(params).map(([key, val], idx, arr) => (
+                  <span key={key}>
+                    {String(val)}
+                    {idx < arr.length - 1 ? ", " : ""}
+                  </span>
+                ))}
+              </p>
             )}
           </div>
           <p className="mt-2 text-xs text-amber-700">{confirm.confirm_hint ?? "Reply confirm or cancel."}</p>
@@ -120,14 +128,12 @@ function ChatBubble({ msg, onQuickReply }: { msg: ChatMsg; onQuickReply: (text: 
             <button
               onClick={() => onQuickReply("confirm")}
               className="rounded-full bg-amber-600 px-2.5 py-1 text-sm font-semibold text-white transition hover:bg-amber-700"
-            >
-              Confirm
+            >Confirm
             </button>
             <button
               onClick={() => onQuickReply("cancel")}
               className="rounded-full border border-amber-800 bg-white px-2.5 py-1 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
-            >
-              Cancel
+            >Cancel
             </button>
           </div>
         </div>

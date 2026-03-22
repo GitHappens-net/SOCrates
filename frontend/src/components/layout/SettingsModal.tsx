@@ -26,12 +26,10 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     if (backendUrl.trim() === "") {
       localStorage.removeItem("socrates_backend_url");
     } else {
-      // Basic cleanup of trailing slashes
       const cleanedUrl = backendUrl.trim().replace(/\/+$/, "");
       localStorage.setItem("socrates_backend_url", cleanedUrl);
     }
     onClose();
-    // Optional: reload to ensure all data is fetched from the new URL
     window.location.reload();
   };
 

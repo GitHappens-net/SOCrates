@@ -128,7 +128,6 @@ export default function LogsPage() {
       setFilterVendor(vend);
     }
     
-    // Check if we should focus the vendor dropdown automatically
     const focusParam = params.get("focus");
     if (focusParam === "vendor") {
       setTimeout(() => {

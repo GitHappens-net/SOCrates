@@ -21,7 +21,14 @@ const VENDOR_PALETTE = [
   "#52525b", // zinc-600
 ];
 
-// Helper to reliably generate the exact same color for a specific vendor
+export const SEVERITY_COLORS: Record<string, string> = {
+  info: "#4f80ed",     // blue
+  low: "#43b36c",      // green
+  medium: "#eab308",   // yellow
+  high: "#df9036",     // orange
+  critical: "#e14f4f", // red
+};
+
 export function getVendorColor(vendorName: string) {
   if (!vendorName) return "#6b7280"; // fallback for empty strings
 

@@ -5,7 +5,7 @@ import DashboardMetricCard from "@/components/dashboard/DashboardMetricCards";
 import TopDevicesChart from "@/components/dashboard/TopDevicesChart";
 import VendorDonutCard from "@/components/dashboard/VendorDonutCard";
 import AlertsBySeverityCard from "@/components/dashboard/AlertsBySeverityCard";
-import { getVendorColor } from "@/utils/colors";
+import { getVendorColor, SEVERITY_COLORS } from "@/utils/colors";
 
 export default function DashboardPage() {
   const { stats } = useStats();
@@ -20,7 +20,7 @@ export default function DashboardPage() {
 
   const vendorData = stats
     ? Object.entries(stats.by_vendor)
-        .sort(([a], [b]) => a.localeCompare(b)) // keep ordering stable
+        .sort(([a], [b]) => a.localeCompare(b))
         .map(([name, value]) => ({
           name,
           value,
@@ -43,14 +43,6 @@ export default function DashboardPage() {
           };
         })
     : [];
-
-  const SEVERITY_COLORS: Record<string, string> = {
-    info: "#4f80ed",     // blue
-    low: "#43b36c",      // green
-    medium: "#eab308",   // yellow
-    high: "#df9036",     // orange
-    critical: "#e14f4f", // red
-  };
 
   const severityCounts = alerts
     .filter(a => a.status === "open")
